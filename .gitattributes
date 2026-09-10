@@ -1,0 +1,5 @@
+# Finais de linha normalizados em LF, no repositório e na cópia de trabalho.
+# Sem isso, o Windows grava CRLF e os arquivos chegam assim ao Ubuntu do VPS —
+# onde um script com CRLF faz o shell recusar a primeira linha com "bad
+# interpreter". Vale para todo mundo do time, independentemente do sistema.
+* text=auto eol=lf

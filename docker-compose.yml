@@ -1,0 +1,45 @@
+services:
+  banco:
+    image: postgres:16
+    container_name: vip-imports-banco
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vip_imports}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vip_imports}
+      POSTGRES_DB: ${POSTGRES_DB:-vip_imports}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - banco_dados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-vip_imports} -d $${POSTGRES_DB:-vip_imports}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: vip-imports-api
+    restart: unless-stopped
+    environment:
+      # Host "banco" (nome do servico acima na rede interna do compose) —
+      # NAO e o DATABASE_URL do .env, que usa "localhost" para uso fora do
+      # container (Alembic rodado direto do host).
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vip_imports}:${POSTGRES_PASSWORD:-vip_imports}@banco:5432/${POSTGRES_DB:-vip_imports}
+      AMBIENTE: ${AMBIENTE:-desenvolvimento}
+      ORIGENS_PERMITIDAS: ${ORIGENS_PERMITIDAS:-http://localhost:5173}
+      NIVEL_LOG: ${NIVEL_LOG:-INFO}
+      PROXIES_CONFIAVEIS: ${PROXIES_CONFIAVEIS:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Monta o codigo fonte por cima do que foi copiado na imagem — junto
+      # com --reload abaixo, edicao no host reinicia o processo sozinho.
+      - ./src:/app/src
+    command: ["uvicorn", "vip_api.principal:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      banco:
+        condition: service_healthy
+
+volumes:
+  banco_dados:
