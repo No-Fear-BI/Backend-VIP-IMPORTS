@@ -30,6 +30,7 @@ services:
       ORIGENS_PERMITIDAS: ${ORIGENS_PERMITIDAS:-http://localhost:5173}
       NIVEL_LOG: ${NIVEL_LOG:-INFO}
       PROXIES_CONFIAVEIS: ${PROXIES_CONFIAVEIS:-}
+      WHATSAPP_LOJA: ${WHATSAPP_LOJA:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

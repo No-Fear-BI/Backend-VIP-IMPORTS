@@ -2,9 +2,14 @@
 importada por todo o resto do pacote — nunca instancie `Configuracao()` de novo."""
 
 from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# Senha do .env.example. Quem copiar o arquivo no VPS e esquecer de trocar
+# fica com um banco de produção de senha pública.
+SENHA_DE_EXEMPLO = "vip_imports"
 
 
 class Configuracao(BaseSettings):
@@ -23,6 +28,10 @@ class Configuracao(BaseSettings):
     # sem proxy configurado, X-Forwarded-For é ignorado por completo, que é o
     # comportamento seguro (o cabeçalho é escrito pelo cliente).
     PROXIES_CONFIAVEIS: Annotated[list[str], NoDecode] = []
+    # Número da loja no WhatsApp, formato internacional só com dígitos.
+    # O link de /selecoes é montado com ele: o número não é escrito no
+    # código nem no frontend, para trocar em um lugar só.
+    WHATSAPP_LOJA: str = ""
 
     @field_validator("ORIGENS_PERMITIDAS", "PROXIES_CONFIAVEIS", mode="before")
     @classmethod
@@ -46,6 +55,37 @@ class Configuracao(BaseSettings):
                 "Informe o IP ou a faixa CIDR do Nginx à frente da API "
                 '(ex.: PROXIES_CONFIAVEIS="172.16.0.0/12"). Sem isso, o limite '
                 "de identificações por IP contaria todos os visitantes como um só."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _recusar_senha_de_exemplo(self) -> Self:
+        # Compara a SENHA extraída da URL, não a URL inteira: usuário e nome
+        # do banco também se chamam "vip_imports", e um `in` daria falso
+        # positivo mesmo com a senha já trocada.
+        try:
+            senha = urlsplit(self.DATABASE_URL).password
+        except ValueError:
+            senha = None
+
+        if self.AMBIENTE == "producao" and senha == SENHA_DE_EXEMPLO:
+            raise RuntimeError(
+                "DATABASE_URL ainda usa a senha de exemplo "
+                f"({SENHA_DE_EXEMPLO!r}) com AMBIENTE=producao. Troque a senha "
+                "do usuário do PostgreSQL e atualize DATABASE_URL no .env — "
+                "o formato é postgresql+psycopg://usuario:SENHA@host:5432/banco. "
+                "Um banco de produção com senha de exemplo é pior do que um "
+                "que não sobe."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exigir_whatsapp_em_producao(self) -> Self:
+        if self.AMBIENTE == "producao" and not self.WHATSAPP_LOJA.isdigit():
+            raise RuntimeError(
+                "WHATSAPP_LOJA precisa ser o número da loja em formato "
+                "internacional, só dígitos (ex.: 5541984975960). Sem ele o "
+                "link de cada seleção enviada aponta para lugar nenhum."
             )
         return self
 

@@ -13,11 +13,13 @@ from vip_api.erros.manipuladores import (
     tratar_erro_validacao,
     tratar_excecao_nao_tratada,
 )
+from vip_api.rotas.carrinho import roteador as roteador_carrinho
 from vip_api.rotas.clientes import roteador as roteador_clientes
 from vip_api.rotas.favoritos import roteador as roteador_favoritos
 from vip_api.rotas.home import roteador as roteador_home
 from vip_api.rotas.navegacao import roteador as roteador_navegacao
 from vip_api.rotas.produtos import roteador as roteador_produtos
+from vip_api.rotas.selecoes import roteador as roteador_selecoes
 from vip_api.rotas.saude import roteador as roteador_saude
 
 logging.basicConfig(level=configuracao.NIVEL_LOG)
@@ -52,5 +54,7 @@ roteador_v1.include_router(roteador_navegacao)
 roteador_v1.include_router(roteador_home)
 roteador_v1.include_router(roteador_clientes)
 roteador_v1.include_router(roteador_favoritos)
+roteador_v1.include_router(roteador_carrinho)
+roteador_v1.include_router(roteador_selecoes)
 
 app.include_router(roteador_v1)
