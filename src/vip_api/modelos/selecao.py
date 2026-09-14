@@ -73,7 +73,6 @@ class SelecaoItem(Base):
             name="fk_selecao_itens_produto_id_produtos",
             ondelete="SET NULL",
         ),
-        CheckConstraint("quantidade > 0", name="ck_selecao_itens_quantidade_positiva"),
         Index("ix_selecao_itens_selecao", "selecao_id", "ordem", "id"),
         Index("ix_selecao_itens_produto", "produto_id"),
     )
@@ -87,10 +86,11 @@ class SelecaoItem(Base):
     categoria_nome: Mapped[str] = mapped_column(String(80))
     colecao_nome: Mapped[str] = mapped_column(String(40))
     imagem_url: Mapped[str | None] = mapped_column(Text)
-    # Texto, não enum: se o enum de variação mudar, o histórico não muda junto.
-    variacao_tipo: Mapped[str | None] = mapped_column(String(20))
-    variacao_valor: Mapped[str | None] = mapped_column(String(60))
-    quantidade: Mapped[int] = mapped_column(SmallInteger, server_default="1")
+    # Texto, não FK: se a variação for renomeada ou apagada, o histórico não
+    # muda junto. Uma coluna por tipo, espelhando o carrinho (revisão 0005) —
+    # com uma coluna só, o item enviado como "M / Preto" voltaria como "M".
+    variacao_tamanho: Mapped[str | None] = mapped_column(String(60))
+    variacao_cor: Mapped[str | None] = mapped_column(String(60))
     observacao: Mapped[str | None] = mapped_column(String(280))
     ordem: Mapped[int] = mapped_column(Integer, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(

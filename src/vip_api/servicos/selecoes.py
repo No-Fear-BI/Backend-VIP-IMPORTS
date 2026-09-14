@@ -8,7 +8,7 @@ from datetime import datetime
 from urllib.parse import quote
 
 from sqlalchemy import and_, func, select, tuple_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from vip_api.configuracao import configuracao
 from vip_api.erros.codigos import CARRINHO_VAZIO, CURSOR_INVALIDO
@@ -23,6 +23,19 @@ SAUDACAO = "Olá! Tenho interesse nestes itens:"
 ASSINATURA = "Enviado pelo site."
 POR_PAGINA_PADRAO = 20
 POR_PAGINA_MAXIMO = 50
+
+_Tamanho = aliased(ProdutoVariacao, name="v_tamanho")
+_Cor = aliased(ProdutoVariacao, name="v_cor")
+
+
+def rotulo_variacao(tamanho: str | None, cor: str | None) -> str | None:
+    """Compõe o rótulo exibível das variações do item.
+
+    Com as duas sai "M / Preto"; com uma só, "M" ou "Preto"; sem nenhuma, nada
+    — é o formato "(Chanel, M / Preto)" que o contrato mostra.
+    """
+    escolhas = [valor for valor in (tamanho, cor) if valor]
+    return " / ".join(escolhas) if escolhas else None
 
 
 def _linha_da_mensagem(codigo: str, nome: str, marca: str, variacao: str | None) -> str:
@@ -57,8 +70,8 @@ def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
             Categoria.nome.label("categoria_nome"),
             Colecao.nome.label("colecao_nome"),
             ProdutoImagem.url.label("imagem_url"),
-            ProdutoVariacao.tipo.label("variacao_tipo"),
-            ProdutoVariacao.valor.label("variacao_valor"),
+            _Tamanho.valor.label("variacao_tamanho"),
+            _Cor.valor.label("variacao_cor"),
         )
         # select_from explícito: a lista de colunas começa em Produto, mas o
         # caminho das junções parte de CarrinhoItem. Sem isso o SQLAlchemy não
@@ -73,7 +86,8 @@ def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
             ProdutoImagem,
             and_(ProdutoImagem.produto_id == Produto.id, ProdutoImagem.capa.is_(True)),
         )
-        .outerjoin(ProdutoVariacao, ProdutoVariacao.id == CarrinhoItem.variacao_id)
+        .outerjoin(_Tamanho, _Tamanho.id == CarrinhoItem.variacao_tamanho_id)
+        .outerjoin(_Cor, _Cor.id == CarrinhoItem.variacao_cor_id)
         .where(Carrinho.cliente_id == cliente_id, Produto.status != "oculto")
         .order_by(CarrinhoItem.criado_em.asc(), CarrinhoItem.id.asc())
     ).all()
@@ -114,8 +128,8 @@ def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
                 categoria_nome=linha.categoria_nome,
                 colecao_nome=linha.colecao_nome,
                 imagem_url=linha.imagem_url,
-                variacao_tipo=linha.variacao_tipo,
-                variacao_valor=linha.variacao_valor,
+                variacao_tamanho=linha.variacao_tamanho,
+                variacao_cor=linha.variacao_cor,
                 ordem=ordem,
             )
         )
@@ -128,7 +142,7 @@ def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
             codigo=linha.codigo,
             nome=linha.nome,
             marca=linha.marca_nome,
-            variacao=linha.variacao_valor,
+            variacao=rotulo_variacao(linha.variacao_tamanho, linha.variacao_cor),
         )
         for linha in linhas
     ]
@@ -208,7 +222,8 @@ def listar_selecoes(
                 SelecaoItem.produto_codigo,
                 SelecaoItem.produto_nome,
                 SelecaoItem.marca_nome,
-                SelecaoItem.variacao_valor,
+                SelecaoItem.variacao_tamanho,
+                SelecaoItem.variacao_cor,
             )
             .where(SelecaoItem.selecao_id.in_(ids))
             .order_by(SelecaoItem.selecao_id, SelecaoItem.ordem, SelecaoItem.id)
@@ -218,7 +233,7 @@ def listar_selecoes(
                     codigo=item.produto_codigo,
                     nome=item.produto_nome,
                     marca=item.marca_nome,
-                    variacao=item.variacao_valor,
+                    variacao=rotulo_variacao(item.variacao_tamanho, item.variacao_cor),
                 )
             )
 

@@ -1,21 +1,20 @@
 """Carrinho do cliente.
 
 NÃO existe quantidade. O contrato não tem esse campo em lugar nenhum: isto é
-catálogo de seleção, não loja com estoque. O mesmo produto com variações
-diferentes são dois itens; o mesmo produto com a mesma variação é um item só —
-regra que o UNIQUE (carrinho_id, produto_id, variacao_id) NULLS NOT DISTINCT
-já sustenta no banco.
+catálogo de seleção, não loja com estoque. (A coluna `quantidade`, morta desde
+a 0001, saiu da tabela na migração 0005.)
 
-(A coluna `quantidade` existe na tabela desde a migração 0001, com default 1.
-Nenhuma rota lê ou escreve nela. Está documentado no relatório da Fatia 3 como
-coluna a remover quando houver outra migração de catálogo.)
+O item guarda ATÉ DUAS variações — uma de tamanho e uma de cor, cada uma na
+sua coluna. Mesmo produto com o mesmo PAR é um item só; par diferente são dois
+itens. Quem sustenta isso é o UNIQUE (carrinho_id, produto_id,
+variacao_tamanho_id, variacao_cor_id) NULLS NOT DISTINCT, no banco.
 """
 
 from dataclasses import dataclass
 
 from sqlalchemy import and_, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from vip_api.erros.codigos import (
     ITEM_NAO_ENCONTRADO,
@@ -37,6 +36,29 @@ from vip_api.modelos.cliente import Carrinho, CarrinhoItem
 
 MOTIVO_PRODUTO_INDISPONIVEL = "PRODUTO_INDISPONIVEL"
 
+# Uma das duas colunas de variação: o tipo no banco, o campo correspondente na
+# entrada da API e como ele é dito na mensagem de erro. A tabela existe para as
+# funções abaixo tratarem tamanho e cor pelo mesmo caminho, em vez de repetir
+# cada regra duas vezes.
+TIPOS = (
+    ("tamanho", "variacaoTamanhoId", "um tamanho"),
+    ("cor", "variacaoCorId", "uma cor"),
+)
+
+_Tamanho = aliased(ProdutoVariacao, name="v_tamanho")
+_Cor = aliased(ProdutoVariacao, name="v_cor")
+
+
+@dataclass(frozen=True)
+class Par:
+    """As duas escolhas do item. `None` nos dois = produto sem variação."""
+
+    tamanho_id: int | None = None
+    cor_id: int | None = None
+
+    def por_tipo(self, tipo: str) -> int | None:
+        return self.tamanho_id if tipo == "tamanho" else self.cor_id
+
 
 def obter_ou_criar_carrinho(sessao: Session, cliente_id: int) -> Carrinho:
     """Um carrinho por cliente — o índice único parcial uq_carrinhos_cliente_ativo
@@ -51,10 +73,11 @@ def obter_ou_criar_carrinho(sessao: Session, cliente_id: int) -> Carrinho:
 
 
 def _consulta_de_itens(carrinho_id: int):
-    """Item do carrinho = produto no formato da listagem + variação escolhida.
+    """Item do carrinho = produto no formato da listagem + as variações escolhidas.
 
-    Tudo numa consulta só: marca, categoria, coleção, capa e variação entram
-    por JOIN, não por uma consulta por item.
+    Tudo numa consulta só: marca, categoria, coleção, capa e as DUAS variações
+    entram por JOIN, não por uma consulta por item. Os dois apelidos de
+    produto_variacoes são o que permite trazer tamanho e cor na mesma linha.
     """
     return (
         select(
@@ -73,10 +96,12 @@ def _consulta_de_itens(carrinho_id: int):
             Colecao.slug.label("colecao_slug"),
             ProdutoImagem.url.label("capa_url"),
             ProdutoImagem.alt.label("capa_alt"),
-            ProdutoVariacao.id.label("variacao_id"),
-            ProdutoVariacao.tipo.label("variacao_tipo"),
-            ProdutoVariacao.valor.label("variacao_valor"),
-            ProdutoVariacao.disponivel.label("variacao_disponivel"),
+            _Tamanho.id.label("tamanho_id"),
+            _Tamanho.valor.label("tamanho_valor"),
+            _Tamanho.disponivel.label("tamanho_disponivel"),
+            _Cor.id.label("cor_id"),
+            _Cor.valor.label("cor_valor"),
+            _Cor.disponivel.label("cor_disponivel"),
         )
         .join(Produto, Produto.id == CarrinhoItem.produto_id)
         .join(Marca, Marca.id == Produto.marca_id)
@@ -86,7 +111,8 @@ def _consulta_de_itens(carrinho_id: int):
             ProdutoImagem,
             and_(ProdutoImagem.produto_id == Produto.id, ProdutoImagem.capa.is_(True)),
         )
-        .outerjoin(ProdutoVariacao, ProdutoVariacao.id == CarrinhoItem.variacao_id)
+        .outerjoin(_Tamanho, _Tamanho.id == CarrinhoItem.variacao_tamanho_id)
+        .outerjoin(_Cor, _Cor.id == CarrinhoItem.variacao_cor_id)
         .where(
             CarrinhoItem.carrinho_id == carrinho_id,
             # Produto oculto some do carrinho, mas a LINHA continua no banco:
@@ -110,14 +136,24 @@ def _montar_item(linha) -> CarrinhoItemSaida:
         categoria=Referencia(nome=linha.categoria_nome, slug=linha.categoria_slug),
         colecao=Referencia(nome=linha.colecao_nome, slug=linha.colecao_slug),
         capa=Capa(url=linha.capa_url, alt=linha.capa_alt) if linha.capa_url else None,
-        variacao=(
+        variacao_tamanho=(
             VariacaoDetalhe(
-                id=linha.variacao_id,
-                tipo=linha.variacao_tipo,
-                valor=linha.variacao_valor,
-                disponivel=linha.variacao_disponivel,
+                id=linha.tamanho_id,
+                tipo="tamanho",
+                valor=linha.tamanho_valor,
+                disponivel=linha.tamanho_disponivel,
             )
-            if linha.variacao_id
+            if linha.tamanho_id
+            else None
+        ),
+        variacao_cor=(
+            VariacaoDetalhe(
+                id=linha.cor_id,
+                tipo="cor",
+                valor=linha.cor_valor,
+                disponivel=linha.cor_disponivel,
+            )
+            if linha.cor_id
             else None
         ),
     )
@@ -131,14 +167,15 @@ def listar_itens(sessao: Session, cliente_id: int) -> list[CarrinhoItemSaida]:
 
 @dataclass(frozen=True)
 class _Validacao:
-    produto_id: int | None
-    variacao_id: int | None
+    produto_id: int
+    par: Par
     motivo: str | None = None
     mensagem: str | None = None
+    campo: str | None = None
 
 
-def _validar(sessao: Session, produto_id: int, variacao_id: int | None) -> _Validacao:
-    """Confere produto e variação sem levantar — quem chama decide se vira erro
+def _validar(sessao: Session, produto_id: int, par: Par) -> _Validacao:
+    """Confere produto e variações sem levantar — quem chama decide se vira erro
     (POST) ou entra na lista de ignorados (migrar)."""
     visivel = sessao.scalar(
         select(Produto.id).where(Produto.id == produto_id, Produto.status != "oculto")
@@ -147,7 +184,7 @@ def _validar(sessao: Session, produto_id: int, variacao_id: int | None) -> _Vali
         existe = sessao.scalar(select(Produto.id).where(Produto.id == produto_id))
         return _Validacao(
             produto_id=produto_id,
-            variacao_id=variacao_id,
+            par=par,
             motivo=MOTIVO_PRODUTO_INDISPONIVEL if existe else PRODUTO_NAO_ENCONTRADO,
             mensagem=(
                 "Este produto não está mais disponível."
@@ -156,48 +193,62 @@ def _validar(sessao: Session, produto_id: int, variacao_id: int | None) -> _Vali
             ),
         )
 
-    if variacao_id is not None:
-        # A variação tem que ser DO PRODUTO informado: sem esta checagem dá
-        # para montar um item com o tamanho de outro produto.
-        pertence = sessao.scalar(
+    for tipo, campo, artigo in TIPOS:
+        variacao_id = par.por_tipo(tipo)
+        if variacao_id is None:
+            continue
+        # Duas condições na mesma consulta: a variação tem que ser DO PRODUTO
+        # informado (sem isso dá para montar um item com o tamanho de outro
+        # produto) e DO TIPO da coluna. O banco recusaria a segunda de
+        # qualquer jeito, pela FK composta — mas recusaria com erro 500, e o
+        # frontend precisa de VARIACAO_INVALIDA no campo certo.
+        confere = sessao.scalar(
             select(ProdutoVariacao.id).where(
                 ProdutoVariacao.id == variacao_id,
                 ProdutoVariacao.produto_id == produto_id,
+                ProdutoVariacao.tipo == tipo,
             )
         )
-        if pertence is None:
+        if confere is None:
             return _Validacao(
                 produto_id=produto_id,
-                variacao_id=variacao_id,
+                par=par,
                 motivo=VARIACAO_INVALIDA,
-                mensagem="A variação escolhida não pertence a este produto.",
+                mensagem=f"A variação escolhida não é {artigo} deste produto.",
+                campo=campo,
             )
 
-    return _Validacao(produto_id=produto_id, variacao_id=variacao_id)
+    return _Validacao(produto_id=produto_id, par=par)
 
 
-def adicionar_item(
-    sessao: Session, cliente_id: int, produto_id: int, variacao_id: int | None
-) -> None:
-    validacao = _validar(sessao, produto_id, variacao_id)
+def _levantar_se_invalido(validacao: _Validacao) -> None:
     if validacao.motivo == VARIACAO_INVALIDA:
         raise AppError(
             codigo=VARIACAO_INVALIDA,
             mensagem=validacao.mensagem,
             status_code=400,
-            campos={"variacaoId": validacao.mensagem},
+            campos={validacao.campo: validacao.mensagem},
         )
     if validacao.motivo is not None:
         raise AppError(
             codigo=PRODUTO_NAO_ENCONTRADO, mensagem="Produto não encontrado.", status_code=404
         )
 
+
+def adicionar_item(sessao: Session, cliente_id: int, produto_id: int, par: Par) -> None:
+    _levantar_se_invalido(_validar(sessao, produto_id, par))
+
     carrinho = obter_ou_criar_carrinho(sessao, cliente_id)
-    # Mesmo produto + mesma variação já no carrinho: não é erro, é sem efeito.
+    # Mesmo produto + mesmo par já no carrinho: não é erro, é sem efeito.
     sessao.execute(
         insert(CarrinhoItem)
-        .values(carrinho_id=carrinho.id, produto_id=produto_id, variacao_id=variacao_id)
-        .on_conflict_do_nothing(constraint="uq_carrinho_itens_carrinho_produto_variacao")
+        .values(
+            carrinho_id=carrinho.id,
+            produto_id=produto_id,
+            variacao_tamanho_id=par.tamanho_id,
+            variacao_cor_id=par.cor_id,
+        )
+        .on_conflict_do_nothing(constraint="uq_carrinho_itens_carrinho_produto_variacoes")
     )
     sessao.commit()
 
@@ -220,40 +271,39 @@ def _item_do_cliente(sessao: Session, cliente_id: int, item_id: int) -> Carrinho
     return item
 
 
-def trocar_variacao(
-    sessao: Session, cliente_id: int, item_id: int, variacao_id: int | None
-) -> None:
+def trocar_variacao(sessao: Session, cliente_id: int, item_id: int, par: Par) -> None:
+    """PATCH troca o PAR inteiro: o tipo que não vier no corpo fica nulo. Não é
+    alteração parcial — a tela tem os dois seletores à vista e manda os dois."""
     item = _item_do_cliente(sessao, cliente_id, item_id)
 
-    validacao = _validar(sessao, item.produto_id, variacao_id)
+    validacao = _validar(sessao, item.produto_id, par)
     if validacao.motivo == VARIACAO_INVALIDA:
         raise AppError(
             codigo=VARIACAO_INVALIDA,
             mensagem=validacao.mensagem,
             status_code=400,
-            campos={"variacaoId": validacao.mensagem},
+            campos={validacao.campo: validacao.mensagem},
         )
 
     ja_existe = sessao.scalar(
         select(CarrinhoItem.id).where(
             CarrinhoItem.carrinho_id == item.carrinho_id,
             CarrinhoItem.produto_id == item.produto_id,
-            CarrinhoItem.variacao_id.is_(variacao_id)
-            if variacao_id is None
-            else CarrinhoItem.variacao_id == variacao_id,
+            CarrinhoItem.variacao_tamanho_id.is_not_distinct_from(par.tamanho_id),
+            CarrinhoItem.variacao_cor_id.is_not_distinct_from(par.cor_id),
             CarrinhoItem.id != item.id,
         )
     )
     if ja_existe is not None:
         # A troca colidiu com um item que já existia. Como "mesmo produto e
-        # mesma variação é um item só", os dois viram um: some o que estava
-        # sendo alterado e fica o que já estava lá.
+        # mesmo par é um item só", os dois viram um: some o que estava sendo
+        # alterado e fica o que já estava lá.
         sessao.execute(delete(CarrinhoItem).where(CarrinhoItem.id == item.id))
     else:
         sessao.execute(
             update(CarrinhoItem)
             .where(CarrinhoItem.id == item.id)
-            .values(variacao_id=variacao_id)
+            .values(variacao_tamanho_id=par.tamanho_id, variacao_cor_id=par.cor_id)
         )
     sessao.commit()
 
@@ -265,7 +315,7 @@ def remover_item(sessao: Session, cliente_id: int, item_id: int) -> None:
 
 
 def migrar_itens(
-    sessao: Session, cliente_id: int, itens: list[tuple[int, int | None]]
+    sessao: Session, cliente_id: int, itens: list[tuple[int, Par]]
 ) -> tuple[list[CarrinhoItemSaida], list[ItemIgnorado]]:
     """Move o carrinho do visitante anônimo (localStorage) para a conta.
 
@@ -279,30 +329,34 @@ def migrar_itens(
     carrinho = obter_ou_criar_carrinho(sessao, cliente_id)
     ignorados: list[ItemIgnorado] = []
 
-    for produto_id, variacao_id in itens:
-        validacao = _validar(sessao, produto_id, variacao_id)
+    for produto_id, par in itens:
+        validacao = _validar(sessao, produto_id, par)
         if validacao.motivo is not None:
             ignorados.append(
                 ItemIgnorado(
                     produto_id=produto_id,
-                    variacao_id=variacao_id,
+                    variacao_tamanho_id=par.tamanho_id,
+                    variacao_cor_id=par.cor_id,
                     motivo=validacao.motivo,
                     mensagem=validacao.mensagem,
                 )
             )
             continue
 
-        # Regra 1: mesmo produto + mesma variação já na conta -> mantém o que
-        # já estava, sem duplicar e sem erro.
-        # Regra 2: mesmo produto + variação diferente -> o UNIQUE não casa,
-        # entra como item novo, e os dois ficam.
+        # Regra 1: mesmo produto + mesmo par já na conta -> mantém o que já
+        # estava, sem duplicar e sem erro.
+        # Regra 2: mesmo produto + par diferente -> o UNIQUE não casa, entra
+        # como item novo, e os dois ficam.
         sessao.execute(
             insert(CarrinhoItem)
             .values(
-                carrinho_id=carrinho.id, produto_id=produto_id, variacao_id=variacao_id
+                carrinho_id=carrinho.id,
+                produto_id=produto_id,
+                variacao_tamanho_id=par.tamanho_id,
+                variacao_cor_id=par.cor_id,
             )
             .on_conflict_do_nothing(
-                constraint="uq_carrinho_itens_carrinho_produto_variacao"
+                constraint="uq_carrinho_itens_carrinho_produto_variacoes"
             )
         )
 

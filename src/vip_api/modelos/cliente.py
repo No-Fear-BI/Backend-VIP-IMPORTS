@@ -10,7 +10,6 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
-    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -20,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import CITEXT, INET, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from vip_api.modelos.base import ACESSO_SITUACAO, Base
+from vip_api.modelos.base import ACESSO_SITUACAO, VARIACAO_TIPO, Base
 
 
 class Cliente(Base):
@@ -161,31 +160,55 @@ class CarrinhoItem(Base):
             name="fk_carrinho_itens_produto_id_produtos",
             ondelete="CASCADE",
         ),
+        # FK COMPOSTA (revisão 0005): a coluna de tipo viaja junto na linha e
+        # é o que prova que a variação apontada é do tipo daquela coluna —
+        # CHECK sozinha não enxerga outra tabela. `SET NULL (coluna)` zera só
+        # o id quando a variação é apagada; a coluna de tipo é NOT NULL.
         ForeignKeyConstraint(
-            ["variacao_id"],
-            ["produto_variacoes.id"],
-            name="fk_carrinho_itens_variacao_id_produto_variacoes",
-            ondelete="SET NULL",
+            ["variacao_tamanho_id", "variacao_tamanho_tipo"],
+            ["produto_variacoes.id", "produto_variacoes.tipo"],
+            name="fk_carrinho_itens_variacao_tamanho_produto_variacoes",
+            ondelete="SET NULL (variacao_tamanho_id)",
         ),
-        CheckConstraint("quantidade > 0", name="ck_carrinho_itens_quantidade_positiva"),
+        ForeignKeyConstraint(
+            ["variacao_cor_id", "variacao_cor_tipo"],
+            ["produto_variacoes.id", "produto_variacoes.tipo"],
+            name="fk_carrinho_itens_variacao_cor_produto_variacoes",
+            ondelete="SET NULL (variacao_cor_id)",
+        ),
+        CheckConstraint(
+            "variacao_tamanho_tipo = 'tamanho'",
+            name="ck_carrinho_itens_variacao_tamanho_tipo",
+        ),
+        CheckConstraint(
+            "variacao_cor_tipo = 'cor'", name="ck_carrinho_itens_variacao_cor_tipo"
+        ),
         # NULLS NOT DISTINCT: sem isso, "produto sem variação" entraria no
         # carrinho quantas vezes o visitante clicasse.
         UniqueConstraint(
             "carrinho_id",
             "produto_id",
-            "variacao_id",
-            name="uq_carrinho_itens_carrinho_produto_variacao",
+            "variacao_tamanho_id",
+            "variacao_cor_id",
+            name="uq_carrinho_itens_carrinho_produto_variacoes",
             postgresql_nulls_not_distinct=True,
         ),
         Index("ix_carrinho_itens_produto", "produto_id"),
-        Index("ix_carrinho_itens_variacao", "variacao_id"),
+        Index("ix_carrinho_itens_variacao_tamanho", "variacao_tamanho_id"),
+        Index("ix_carrinho_itens_variacao_cor", "variacao_cor_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     carrinho_id: Mapped[int] = mapped_column(Integer)
     produto_id: Mapped[int] = mapped_column(Integer)
-    variacao_id: Mapped[int | None] = mapped_column(Integer)
-    quantidade: Mapped[int] = mapped_column(SmallInteger, server_default="1")
+    variacao_tamanho_id: Mapped[int | None] = mapped_column(Integer)
+    variacao_cor_id: Mapped[int | None] = mapped_column(Integer)
+    # Constante, preenchida pelo DEFAULT: existe só para a FK composta ter o
+    # tipo do lado de cá. Nenhuma rota escreve nestas duas.
+    variacao_tamanho_tipo: Mapped[str] = mapped_column(
+        VARIACAO_TIPO, server_default="tamanho"
+    )
+    variacao_cor_tipo: Mapped[str] = mapped_column(VARIACAO_TIPO, server_default="cor")
     observacao: Mapped[str | None] = mapped_column(String(280))
     criado_em: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()

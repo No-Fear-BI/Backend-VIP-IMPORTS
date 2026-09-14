@@ -13,6 +13,7 @@ from vip_api.esquemas.carrinho import (
     TrocaVariacaoEntrada,
 )
 from vip_api.servicos.carrinho import (
+    Par,
     adicionar_item,
     listar_itens,
     migrar_itens,
@@ -37,7 +38,12 @@ def adicionar(
     atual: ClienteAutenticado = Depends(cliente_autenticado),
     sessao: Session = Depends(obter_sessao),
 ) -> dict:
-    adicionar_item(sessao, atual.cliente.id, corpo.produto_id, corpo.variacao_id)
+    adicionar_item(
+        sessao,
+        atual.cliente.id,
+        corpo.produto_id,
+        Par(corpo.variacao_tamanho_id, corpo.variacao_cor_id),
+    )
     return {"ok": True}
 
 
@@ -48,7 +54,12 @@ def trocar(
     atual: ClienteAutenticado = Depends(cliente_autenticado),
     sessao: Session = Depends(obter_sessao),
 ) -> dict:
-    trocar_variacao(sessao, atual.cliente.id, item_id, corpo.variacao_id)
+    trocar_variacao(
+        sessao,
+        atual.cliente.id,
+        item_id,
+        Par(corpo.variacao_tamanho_id, corpo.variacao_cor_id),
+    )
     return {"ok": True}
 
 
@@ -71,6 +82,6 @@ def migrar(
     itens, ignorados = migrar_itens(
         sessao,
         atual.cliente.id,
-        [(i.produto_id, i.variacao_id) for i in corpo.itens],
+        [(i.produto_id, Par(i.variacao_tamanho_id, i.variacao_cor_id)) for i in corpo.itens],
     )
     return MigracaoSaida(itens=itens, ignorados=ignorados)

@@ -117,8 +117,8 @@ erDiagram
         int id PK
         int carrinho_id FK
         int produto_id FK
-        int variacao_id FK
-        smallint quantidade
+        int variacao_tamanho_id FK
+        int variacao_cor_id FK
         varchar observacao
     }
     selecoes {
@@ -140,7 +140,8 @@ erDiagram
         varchar categoria_nome
         varchar colecao_nome
         text imagem_url
-        smallint quantidade
+        varchar variacao_tamanho
+        varchar variacao_cor
         int ordem
     }
     administradores {
@@ -464,7 +465,7 @@ CHECK (cliente_id IS NOT NULL OR visitante_token_hash IS NOT NULL)
 CREATE UNIQUE INDEX ux_carrinhos_cliente ON carrinhos (cliente_id) WHERE cliente_id IS NOT NULL;
 ```
 
-**Como `POST /carrinho/migrar` funciona neste desenho.** O visitante monta o carrinho anônimo. Ao se identificar, o serviço tem os dois carrinhos em mãos: move os itens do anônimo para o do cliente — somando quantidades quando o par (produto, variação) já existe lá — e apaga o carrinho anônimo. Tudo numa transação só. O índice único parcial acima garante um carrinho por cliente, então nunca existe o caso de "o cliente tem dois carrinhos e não sei qual é o bom".
+**Como `POST /carrinho/migrar` funciona neste desenho.** O visitante monta o carrinho anônimo. Ao se identificar, o serviço tem os dois carrinhos em mãos: move os itens do anônimo para o do cliente — ignorando o que já existe lá, porque o conjunto (produto, tamanho, cor) é a identidade do item e não há quantidade para somar — e apaga o carrinho anônimo. Tudo numa transação só. O índice único parcial acima garante um carrinho por cliente, então nunca existe o caso de "o cliente tem dois carrinhos e não sei qual é o bom".
 
 ### 4.12 `carrinho_itens`
 
@@ -473,17 +474,33 @@ CREATE UNIQUE INDEX ux_carrinhos_cliente ON carrinhos (cliente_id) WHERE cliente
 | `id` | `integer` | não | identity | PK | É o `:itemId` de `PATCH` e `DELETE /carrinho/:itemId`. |
 | `carrinho_id` | `integer` | não | — | FK → `carrinhos.id` `ON DELETE CASCADE` | |
 | `produto_id` | `integer` | não | — | FK → `produtos.id` `ON DELETE CASCADE` | Dado **vivo**: nome e foto vêm do produto atual, em tempo real. É o contraste exato com `selecao_itens`. |
-| `variacao_id` | `integer` | sim | — | FK → `produto_variacoes.id` `ON DELETE SET NULL` | Nulo quando o produto não tem variação. Se a variação for apagada, o item permanece e o serviço pede a escolha de novo. |
-| `quantidade` | `smallint` | não | `1` | CHECK `> 0` | |
+| `variacao_tamanho_id` | `integer` | sim | — | FK composta → `produto_variacoes (id, tipo)` `ON DELETE SET NULL (variacao_tamanho_id)` | Nulo quando o produto não tem tamanho ou o cliente não escolheu. Se a variação for apagada, o item permanece e o serviço pede a escolha de novo. |
+| `variacao_cor_id` | `integer` | sim | — | FK composta → `produto_variacoes (id, tipo)` `ON DELETE SET NULL (variacao_cor_id)` | Idem, para cor. |
+| `variacao_tamanho_tipo` | `variacao_tipo` | não | `'tamanho'` | CHECK `= 'tamanho'` | Valor constante. Existe só para a FK composta ter o tipo do lado de cá — ver abaixo. Nenhuma rota escreve nela. |
+| `variacao_cor_tipo` | `variacao_tipo` | não | `'cor'` | CHECK `= 'cor'` | Idem. |
 | `observacao` | `varchar(280)` | sim | — | — | "quero na cor bege". Vira texto na mensagem de WhatsApp. |
 | `criado_em` | `timestamptz` | não | `now()` | — | |
 | `atualizado_em` | `timestamptz` | não | `now()` | — | |
 
 ```sql
-UNIQUE NULLS NOT DISTINCT (carrinho_id, produto_id, variacao_id)
+UNIQUE NULLS NOT DISTINCT (carrinho_id, produto_id, variacao_tamanho_id, variacao_cor_id)
 ```
 
 `NULLS NOT DISTINCT` é recurso do PostgreSQL 15+ e resolve um detalhe chato: por padrão o banco trata dois `NULL` como valores diferentes, então "produto 812 sem variação" poderia ser adicionado dez vezes sem violar nada. Com essa cláusula, o `NULL` conta como valor igual e a duplicata é barrada. Como o alvo é PostgreSQL 16, dá para usar direto.
+
+**Uma variação de cada tipo, não uma variação só (revisão 0005).** O contrato mostra a seleção como "(Chanel, M / Preto)" e a página do produto tem os dois seletores — com uma coluna `variacao_id` só, o cliente escolhia um ou outro. Como `variacao_tipo` é enum fechado em dois valores, uma coluna nulável por tipo dá "no máximo um de cada" sem tabela de ligação e sem regra em código contando variações.
+
+O que impede uma cor de ser gravada na coluna de tamanho é a **FK composta**, não a CHECK: `CHECK` não aceita subconsulta e por isso não enxerga `produto_variacoes`. Então o tipo viaja junto na linha, em colunas de valor constante preenchidas pelo `DEFAULT`, e o par vai inteiro na referência:
+
+```sql
+FOREIGN KEY (variacao_tamanho_id, variacao_tamanho_tipo)
+    REFERENCES produto_variacoes (id, tipo)
+    ON DELETE SET NULL (variacao_tamanho_id)
+```
+
+A CHECK prende cada coluna de tipo ao seu valor; a FK prova que o tipo declarado é o tipo real da variação apontada. Gravar o id de uma cor em `variacao_tamanho_id` estoura a FK; gravar `'cor'` na coluna de tipo estoura a CHECK. É o mesmo padrão de `produtos (categoria_id, colecao_id)` da seção 4.4, e exige `UNIQUE (id, tipo)` em `produto_variacoes` — `id` já é PK, mas o PostgreSQL cobra unicidade declarada no par exato. A lista de colunas em `ON DELETE SET NULL` é sintaxe do PostgreSQL 15: sem ela o banco tentaria zerar também a coluna de tipo, que é `NOT NULL`.
+
+**Não há coluna de quantidade** (saiu na revisão 0005, sem nunca ter sido lida ou escrita por rota nenhuma): isto é catálogo de seleção, não loja com estoque. O mesmo produto com pares diferentes são itens diferentes; com o mesmo par, é um item só.
 
 ### 4.13 `selecoes`
 
@@ -517,9 +534,8 @@ A seleção **enviada**. Daqui em diante é histórico, não rascunho.
 | `categoria_nome` | `varchar(80)` | não | — | — | **Congelado.** |
 | `colecao_nome` | `varchar(40)` | não | — | — | **Congelado.** |
 | `imagem_url` | `text` | sim | — | — | **Congelada** a URL da capa no momento do envio. Se o arquivo sair do CDN a imagem quebra, mas o registro continua correto. |
-| `variacao_tipo` | `varchar(20)` | sim | — | — | **Congelado como texto**, não como enum nem FK: se o enum mudar depois, o histórico não muda junto. |
-| `variacao_valor` | `varchar(60)` | sim | — | — | **Congelado.** |
-| `quantidade` | `smallint` | não | `1` | CHECK `> 0` | |
+| `variacao_tamanho` | `varchar(60)` | sim | — | — | **Congelado como texto**, não como enum nem FK: se a variação for renomeada ou apagada, o histórico não muda junto. Uma coluna por tipo, espelhando o carrinho (revisão 0005) — com uma coluna só, o item enviado como "M / Preto" voltaria do histórico como "M". |
+| `variacao_cor` | `varchar(60)` | sim | — | — | **Congelado.** |
 | `observacao` | `varchar(280)` | sim | — | — | Copiada do item do carrinho. |
 | `ordem` | `integer` | não | `0` | — | Ordem em que o cliente montou. Explícita. |
 | `criado_em` | `timestamptz` | não | `now()` | — | |
@@ -769,8 +785,9 @@ Repare que `marca_id`, `categoria_id` e `colecao_id` **não** ganham índice sim
 | 24 | `pk_produto_imagens` `[PK]` | `(id)` | Imagem por id dentro do CRUD de `/admin/produtos`. |
 | 25 | `ux_produto_imagens_ordem` `[UK]` | `(produto_id, ordem)` DEFERRABLE | Carregar as imagens já na ordem certa em `GET /produtos/:codigo`; sustenta a reordenação do CRUD de produto; e a verificação de "produto sem imagem" da tarefa 68 (4.5). |
 | 26 | `ux_produto_imagens_capa` `[UK parcial]` | `(produto_id) WHERE capa` | `capa` de cada item em `GET /produtos` e `GET /produtos/:codigo`; garante uma capa só. |
-| 27 | `pk_produto_variacoes` `[PK]` | `(id)` | FK de `carrinho_itens.variacao_id`; variação por id no CRUD de produto. |
+| 27 | `pk_produto_variacoes` `[PK]` | `(id)` | Variação por id no CRUD de produto. |
 | 28 | `ux_produto_variacoes_valor` `[UK]` | `(produto_id, tipo, valor)` | Carregar as `variacoes` de `GET /produtos/:codigo`; barrar "tamanho M" duplicado no CRUD. |
+| 28b | `uq_produto_variacoes_id_tipo` `[UK]` | `(id, tipo)` | Alvo das duas FKs compostas de `carrinho_itens` (4.12): é o que amarra a variação ao tipo da coluna que a guarda. |
 | 29 | `pk_banners` `[PK]` | `(id)` | CRUD de `/admin/banners`. |
 | 30 | `ix_banners_ativos` | `(ordem, id) WHERE ativo` | Carrossel de banners de `GET /home`. |
 
@@ -795,9 +812,10 @@ Repare que `marca_id`, `categoria_id` e `colecao_id` **não** ganham índice sim
 | 40 | `ux_carrinhos_cliente` `[UK parcial]` | `(cliente_id) WHERE cliente_id IS NOT NULL` | `GET`/`POST /carrinho` do cliente identificado; garante um carrinho por cliente; lado de destino do `POST /carrinho/migrar`. |
 | 41 | `ux_carrinhos_visitante` `[UK]` | `(visitante_token_hash)` | `GET`/`POST /carrinho` do visitante anônimo; lado de origem do `POST /carrinho/migrar`. |
 | 42 | `pk_carrinho_itens` `[PK]` | `(id)` | `PATCH`/`DELETE /carrinho/:itemId`. |
-| 43 | `ux_carrinho_itens_produto` `[UK]` | `(carrinho_id, produto_id, variacao_id)` NULLS NOT DISTINCT | Carregar `GET /carrinho`; impedir item repetido em `POST /carrinho`; base do merge de `POST /carrinho/migrar`. |
+| 43 | `ux_carrinho_itens_produto` `[UK]` | `(carrinho_id, produto_id, variacao_tamanho_id, variacao_cor_id)` NULLS NOT DISTINCT | Carregar `GET /carrinho`; impedir item repetido em `POST /carrinho`; base do merge de `POST /carrinho/migrar`. |
 | 44 | `ix_carrinho_itens_produto` | `(produto_id)` | `DELETE /admin/produtos/:id` precisa achar os itens de carrinho para apagar em cascata. |
-| 45 | `ix_carrinho_itens_variacao` | `(variacao_id)` | Exclusão de variação no CRUD de produto (`ON DELETE SET NULL`): achar os itens de carrinho que referenciam a variação apagada. |
+| 45 | `ix_carrinho_itens_variacao_tamanho` | `(variacao_tamanho_id)` | Exclusão de variação no CRUD de produto (`ON DELETE SET NULL`): achar os itens de carrinho que referenciam a variação apagada. |
+| 45b | `ix_carrinho_itens_variacao_cor` | `(variacao_cor_id)` | Idem, para a coluna de cor. |
 
 #### `selecoes` e `selecao_itens`
 

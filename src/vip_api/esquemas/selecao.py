@@ -13,6 +13,9 @@ class SelecaoItemSaida(EsquemaResposta):
     codigo: str
     nome: str
     marca: str
+    # Rótulo pronto para exibir, já composto a partir das duas variações
+    # congeladas: "M / Preto", "M", "Preto" ou nulo. É o mesmo texto que vai na
+    # mensagem do WhatsApp — a tela não precisa montar nada.
     variacao: str | None = None
 
 

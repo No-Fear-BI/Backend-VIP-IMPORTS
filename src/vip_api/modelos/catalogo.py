@@ -333,6 +333,9 @@ class ProdutoVariacao(Base):
         UniqueConstraint(
             "produto_id", "tipo", "valor", name="uq_produto_variacoes_produto_tipo_valor"
         ),
+        # Alvo da FK composta de carrinho_itens (revisão 0005): `id` já é PK,
+        # mas o PostgreSQL exige unicidade declarada no PAR referenciado.
+        UniqueConstraint("id", "tipo", name="uq_produto_variacoes_id_tipo"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
