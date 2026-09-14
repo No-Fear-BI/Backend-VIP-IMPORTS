@@ -159,10 +159,10 @@ def teste_tabela_da_varredura(sem_sessao, cliente_logado, admin_logado, capsys):
         )
 
     with capsys.disabled():
-        print(f"\n  {'MÉTODO':<20} {'ROTA':<34} {'sem cookie':>10} {'cliente':>8} {'admin':>7}")
-        print(f"  {'-' * 20} {'-' * 34} {'-' * 10} {'-' * 8} {'-' * 7}")
+        print(f"\n  {'MÉTODO':<20} {'ROTA':<44} {'sem cookie':>10} {'cliente':>8} {'admin':>7}")
+        print(f"  {'-' * 20} {'-' * 44} {'-' * 10} {'-' * 8} {'-' * 7}")
         for metodo, caminho, sem, cli, adm in linhas:
-            print(f"  {metodo:<20} {caminho:<34} {sem:>10} {cli:>8} {adm:>7}")
+            print(f"  {metodo:<20} {caminho:<44} {sem:>10} {cli:>8} {adm:>7}")
         print(f"\n  {len(linhas)} entradas, {len(EXCECOES)} exceções declaradas")
 
     assert linhas

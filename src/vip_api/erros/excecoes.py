@@ -21,9 +21,15 @@ class AppError(Exception):
         mensagem: str,
         status_code: int = 400,
         campos: dict[str, str] | None = None,
+        detalhes: dict | None = None,
     ) -> None:
         self.codigo = codigo
         self.mensagem = mensagem
         self.status_code = status_code
         self.campos = campos
+        # `campos` é texto por campo de formulário, renderizado embaixo de um
+        # input. `detalhes` é para o que a TELA precisa processar em vez de
+        # exibir — hoje só a lista de ids que a alteração em lote recusou, que
+        # o painel usa para marcar as linhas. Some do JSON quando não é usado.
+        self.detalhes = detalhes
         super().__init__(mensagem)

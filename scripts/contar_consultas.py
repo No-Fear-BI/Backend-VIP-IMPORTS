@@ -7,6 +7,7 @@ conta cada ida ao banco, mostrando o SQL de cada uma.
     python scripts/contar_consultas.py detalhe CHN-0042
     python scripts/contar_consultas.py relacionados CHN-0042
     python scripts/contar_consultas.py marcas
+    python scripts/contar_consultas.py admin-produtos [porPagina]
 """
 
 import os
@@ -19,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from sqlalchemy import event, text  # noqa: E402
 
 from vip_api.banco import SessaoLocal, engine  # noqa: E402
-from vip_api.servicos import catalogo, home, navegacao  # noqa: E402
+from vip_api.servicos import admin_produtos, catalogo, home, navegacao  # noqa: E402
 
 consultas: list[str] = []
 
@@ -58,6 +59,21 @@ def main() -> None:
         elif alvo == "relacionados":
             resultado = catalogo.listar_relacionados(sessao, argumento)
             descricao = f"{len(resultado)} relacionados"
+        elif alvo == "admin-produtos":
+            # A listagem do painel é o caso clássico de N+1: cada linha da
+            # tabela mostra marca, categoria, coleção e a capa. Se elas vierem
+            # por atributo do ORM em vez de JOIN, são 4 consultas por produto —
+            # 201 com 50 por página.
+            por_pagina = int(argumento) if argumento else 50
+            resultado = admin_produtos.listar_produtos(
+                sessao, admin_produtos.FiltrosAdmin(por_pagina=por_pagina)
+            )
+            com_capa = sum(1 for item in resultado.dados if item.capa)
+            descricao = (
+                f"{len(resultado.dados)} produtos de {resultado.paginacao.total}, "
+                f"{com_capa} com capa, "
+                f"{len({item.marca.slug for item in resultado.dados})} marcas distintas"
+            )
         elif alvo == "marcas":
             resultado = navegacao.listar_marcas(sessao)
             descricao = f"{len(resultado)} marcas"

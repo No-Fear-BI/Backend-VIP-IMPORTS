@@ -44,14 +44,18 @@ class Paginacao(EsquemaResposta):
     total: int
     por_pagina: int
     proximo_cursor: str | None = None
+    # Só as listagens do painel usam página numerada (contrato, seção 1.5); as
+    # públicas usam cursor. Os dois campos convivem no mesmo envelope, e cada
+    # rota preenche o seu — o outro some do JSON.
+    pagina: int | None = None
 
     @model_serializer(mode="wrap")
-    def _omitir_cursor_quando_nulo(self, handler):
-        # "proximoCursor" é opcional e SOME do JSON quando não há próxima
-        # página — não aparece como null. Isso não dá para expressar só com
+    def _omitir_o_que_nao_se_aplica(self, handler):
+        # "proximoCursor" e "pagina" são opcionais e SOMEM do JSON quando não
+        # há valor — não aparecem como null. Isso não dá para expressar só com
         # o tipo do campo, por isso o serializer.
         dados = handler(self)
-        for chave in ("proximoCursor", "proximo_cursor"):
+        for chave in ("proximoCursor", "proximo_cursor", "pagina"):
             if dados.get(chave) is None:
                 dados.pop(chave, None)
         return dados

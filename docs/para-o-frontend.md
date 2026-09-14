@@ -64,9 +64,48 @@ Formato de resposta, envelope de erro (`erro.codigo`/`erro.mensagem`/`erro.campo
   { "email": "painel@nofear.com.br", "senha": "..." }
   ```
 
-  200 devolve o administrador (`id`, `nome`, `email`, `ultimoLoginEm`, `criadoEm`) e grava o cookie. Falha devolve **401 com `CREDENCIAIS_INVALIDAS`** — e é sempre a MESMA resposta para e-mail que não existe, senha errada e conta desativada. Não tente distinguir os três na tela: o backend não distingue de propósito, inclusive no tempo de resposta. Mostre uma mensagem só: "E-mail ou senha inválidos."
+  200 devolve o administrador (`id`, `nome`, `email`, `ultimoLoginEm`, `criadoEm`) e grava o cookie. **`ultimoLoginEm` é campo novo, não previsto no contrato v1.0**: é o instante DESTE login, gravado quando a sessão abre — não o login anterior. `GET /admin/eu` devolve o mesmo valor enquanto a sessão durar, então ele serve para a tela mostrar "sessão iniciada em ...". É nulo só para conta que nunca entrou, o que nenhuma destas duas respostas alcança. Falha devolve **401 com `CREDENCIAIS_INVALIDAS`** — e é sempre a MESMA resposta para e-mail que não existe, senha errada e conta desativada. Não tente distinguir os três na tela: o backend não distingue de propósito, inclusive no tempo de resposta. Mostre uma mensagem só: "E-mail ou senha inválidos."
 - **`DELETE /api/v1/admin/sessao`** — sair. Responde `200 {"ok": true}`, revoga a sessão no banco e limpa o cookie. Funciona mesmo com a sessão já expirada.
-- **`GET /api/v1/admin/eu`** — é a rota que o painel chama ao abrir para saber se a sessão ainda vale. 200 com o administrador; **401** (`NAO_IDENTIFICADO`) quando não há sessão de admin — mande para a tela de login; **403** (`SEM_PERMISSAO`) quando quem bate está logado como CLIENTE — aí não adianta mandar para o login do painel, essa conta não tem senha de admin.
+- **`GET /api/v1/admin/eu` — rota NOVA, não existe no contrato v1.0.** É a rota que o painel chama ao abrir para saber se a sessão ainda vale. 200 com o administrador; **401** (`NAO_IDENTIFICADO`) quando não há sessão de admin — mande para a tela de login; **403** (`SEM_PERMISSAO`) quando quem bate está logado como CLIENTE — aí não adianta mandar para o login do painel, essa conta não tem senha de admin.
 - **A sessão do painel dura 12 horas e NÃO renova com o uso.** Ao contrário da sessão do cliente, que se estende sozinha, aqui o relógio corre desde o login: passadas as 12 horas, qualquer chamada volta 401 e é login de novo. Trate 401 em qualquer rota do painel como "sessão acabou", não como erro da tela.
+- **Código de erro novo: `CREDENCIAIS_INVALIDAS`** (401). Só o login do painel devolve. Um código só para os três casos — e-mail que não existe, senha errada e conta desativada — porque códigos diferentes diriam quais e-mails são de administrador.
 - **Limite de 5 logins por minuto por IP**, com **429** e `EXCESSO_TENTATIVAS` — contagem separada da identificação do cliente, então estourar um não bloqueia o outro.
 - **Não existe rota de cadastro nem de troca de senha de administrador.** As contas são criadas e têm a senha trocada por comando de linha no servidor (`scripts/criar_admin.py` e `scripts/trocar_senha_admin.py`). Trocar a senha derruba as sessões abertas daquele administrador na hora.
+
+## Painel administrativo — produtos (tarefa 55)
+
+Todas estas rotas exigem a sessão de admin: sem cookie é **401**, com cookie de cliente é **403**. Nenhuma delas é exceção — a única parte do painel que responde sem sessão é `POST`/`DELETE /admin/sessao`.
+
+- **`GET /api/v1/admin/produtos`** — a listagem do painel. **Traz os produtos OCULTOS junto**, ao contrário de `GET /produtos`: é daqui que o admin reexibe o que escondeu. Filtros: `busca` (nome ou código, parcial), `marcaId`, `categoriaId`, `colecaoId`, `status` (`normal`, `esgotado` ou `oculto` — ausente traz tudo).
+
+  **A paginação aqui é por página, não por cursor**: `?pagina=1&porPagina=50` (máximo 100). O envelope é o mesmo `{dados, paginacao}` de sempre, só que `paginacao` traz `pagina` em vez de `proximoCursor`:
+
+  ```json
+  { "dados": [ ... ], "paginacao": { "total": 5000, "porPagina": 50, "pagina": 1 } }
+  ```
+
+  Cada item traz `id`, `codigo`, `nome`, `status`, `destaque`, `marca`, `categoria`, `colecao`, `capa`, `criadoEm` e `atualizadoEm`.
+- **`GET /api/v1/admin/produtos/:id`** — o produto para edição, **por id e não por código**: no painel o código é editável, e recarregar pelo código que acabou de mudar perde o produto no meio do formulário. Traz `imagens` (ordenadas) e `variacoes`, mais `marcaId`/`categoriaId`/`colecaoId` para os seletores do formulário.
+- **`POST /api/v1/admin/produtos`** — cria; responde **201** com o produto.
+
+  ```json
+  { "nome": "Bolsa Clássica", "marcaId": 3, "categoriaId": 7, "status": "normal", "destaque": false }
+  ```
+
+  **`codigo` é opcional.** Sem ele, o backend gera no padrão da marca (`CHN-0042`): três letras da marca — as que a marca já usa nos códigos existentes — mais o próximo sequencial. Mandar um código já usado devolve **409 `CODIGO_EM_USO`**.
+- **`PATCH /api/v1/admin/produtos/:id`** — edita. **Campo ausente não muda**; `null` em `descricao` apaga o valor. Trocar o código para um já existente devolve 409. Trocar `categoriaId` move a coleção junto.
+- **`DELETE /api/v1/admin/produtos/:id`** — exclui. Some com as imagens, as variações, os favoritos e os itens de carrinho que apontavam para o produto. **As seleções já enviadas NÃO somem**: elas são histórico congelado e continuam mostrando código, nome, marca e variações como estavam no envio — só perdem o link para o produto.
+- **`POST /api/v1/admin/produtos/:id/duplicar`** — responde **201** com a cópia: mesmas imagens (na mesma ordem) e variações, código novo, nome com `(cópia)` no fim. **A cópia nasce `oculto` e sem destaque** — é rascunho até alguém terminar de editar, e uma gêmea publicada na hora apareceria na vitrine.
+- **`PATCH /api/v1/admin/produtos/lote`** — altera vários de uma vez. Aceita **exatamente quatro campos**, e qualquer outro é **400**: `status`, `destaque`, `marcaId`, `categoriaId`. Máximo de 100 ids por chamada.
+
+  ```json
+  { "ids": [12, 34, 56], "status": "oculto" }
+  ```
+
+  Responde `{"alterados": 3}`. **É tudo ou nada**: se algum id não existir mais, nada é alterado e a resposta é **404** com a lista dos ids problemáticos em `erro.detalhes.naoEncontrados` — use essa lista para marcar as linhas na tela e recarregar a listagem.
+
+  ```json
+  { "erro": { "codigo": "PRODUTO_NAO_ENCONTRADO", "mensagem": "...", "campos": { "ids": "..." }, "detalhes": { "naoEncontrados": [99] } } }
+  ```
+
+- **`erro.detalhes` é campo novo do envelope de erro**, e opcional: some quando não há nada a processar. `campos` continua sendo o texto que vai embaixo de cada input; `detalhes` é o que a tela precisa ler como dado, não exibir como frase.

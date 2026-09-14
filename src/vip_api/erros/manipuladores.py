@@ -24,17 +24,24 @@ from vip_api.erros.excecoes import AppError
 logger = logging.getLogger("vip_api.erros")
 
 
-def _envelope(codigo: str, mensagem: str, campos: dict[str, str] | None = None) -> dict:
+def _envelope(
+    codigo: str,
+    mensagem: str,
+    campos: dict[str, str] | None = None,
+    detalhes: dict | None = None,
+) -> dict:
     erro: dict[str, object] = {"codigo": codigo, "mensagem": mensagem}
     if campos:
         erro["campos"] = campos
+    if detalhes:
+        erro["detalhes"] = detalhes
     return {"erro": erro}
 
 
 async def tratar_app_error(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content=_envelope(exc.codigo, exc.mensagem, exc.campos),
+        content=_envelope(exc.codigo, exc.mensagem, exc.campos, exc.detalhes),
     )
 
 
@@ -56,6 +63,10 @@ _MENSAGENS_POR_TIPO = {
     "less_than": "Este valor é muito grande.",
     "less_than_equal": "Este valor é muito grande.",
     "value_error": "Valor inválido para este campo.",
+    # Corpo com campo que a rota não aceita (PATCH /admin/produtos/lote):
+    # dizer "valor inválido" mandaria procurar erro no valor, e o problema
+    # é o campo existir.
+    "extra_forbidden": "Este campo não é aceito nesta rota.",
 }
 _MENSAGEM_PADRAO = "Valor inválido para este campo."
 
