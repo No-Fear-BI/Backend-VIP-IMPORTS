@@ -6,7 +6,7 @@ real de desenvolvimento, com 5.000 produtos e clientes de verdade.
 
     python scripts/verificar_admin_produtos.py <passo>
 
-Passos: codigo, exclusao, duplicar, lote, tudo
+Passos: codigo, exclusao, duplicar, lote, imagens, variacoes, status, filtro, tudo
 """
 
 import json
@@ -66,6 +66,26 @@ class Painel:
 
     def delete(self, caminho):
         return self._pedir("DELETE", caminho)[0::2]
+
+
+class Cliente(Painel):
+    """Sessão de CLIENTE, para os passos que precisam de carrinho e favoritos.
+    Herda só o transporte HTTP do Painel — a identificação é outra."""
+
+    def __init__(self, email: str):
+        self.cookie = ""
+        corpo, cabecalhos, status = self._pedir(
+            "POST", "/clientes/identificar", {"email": email}
+        )
+        if status != 200:
+            raise SystemExit(f"identificação do cliente falhou: HTTP {status} {corpo}")
+        for chave, valor in cabecalhos:
+            if chave.lower() == "set-cookie":
+                self.cookie = valor.split(";")[0]
+        self.id = corpo["id"]
+
+    def carrinho(self):
+        return self.get("/carrinho")[0]
 
 
 def _sessao_do_banco():
@@ -336,11 +356,385 @@ def passo_lote() -> None:
     print(f"    HTTP {status} {json.dumps(corpo, ensure_ascii=False)}")
 
 
+# ======================================================================
+# imagens — ordem contígua e capa a cada operação
+# ======================================================================
+
+
+def _galeria(rotulo, imagens, capa_id=None):
+    print(f"  {rotulo}")
+    if not imagens:
+        print("    (sem imagem)")
+        return
+    for imagem in imagens:
+        marca = " <- CAPA" if capa_id == imagem["id"] else ""
+        print(f"    ordem={imagem['ordem']}  id={imagem['id']:<6} {imagem['url']}{marca}")
+
+
+def _capa_no_banco(produto_id):
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import ProdutoImagem
+
+    with _sessao_do_banco() as sessao:
+        return sessao.scalar(
+            select(ProdutoImagem.id).where(
+                ProdutoImagem.produto_id == produto_id, ProdutoImagem.capa.is_(True)
+            )
+        )
+
+
+def passo_imagens() -> None:
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        marca, categoria = _marca_e_categoria(sessao)
+
+    produto, _ = painel.post(
+        "/admin/produtos",
+        {"nome": "Bolsa da Galeria", "marcaId": marca.id, "categoriaId": categoria.id},
+    )
+    print(f"  produto {produto['codigo']} (id {produto['id']}), criado sem imagem\n")
+
+    imagens, status = painel.post(
+        f"/admin/produtos/{produto['id']}/imagens",
+        {
+            "imagens": [
+                {"url": "https://cdn.test/frente.jpg", "alt": "frente"},
+                {"url": "https://cdn.test/lado.jpg"},
+                {"url": "https://cdn.test/interior.jpg"},
+            ]
+        },
+    )
+    print(f"  POST .../imagens com três URLs  ->  HTTP {status}")
+    _galeria("depois de inserir:", imagens, _capa_no_banco(produto["id"]))
+
+    invertida = [imagens[2]["id"], imagens[0]["id"], imagens[1]["id"]]
+    reordenadas, status = painel.patch(
+        f"/admin/produtos/{produto['id']}/imagens/ordem", {"ids": invertida}
+    )
+    print(f"\n  PATCH .../imagens/ordem {invertida}  ->  HTTP {status}")
+    _galeria("depois de reordenar:", reordenadas, _capa_no_banco(produto["id"]))
+
+    capa_atual = reordenadas[0]["id"]
+    restantes, status = painel.delete(f"/admin/imagens/{capa_atual}")
+    print(f"\n  DELETE /admin/imagens/{capa_atual} (a CAPA)  ->  HTTP {status}")
+    _galeria("depois de apagar a capa:", restantes, _capa_no_banco(produto["id"]))
+
+    print("\n  PATCH .../imagens/ordem com lista PARCIAL:")
+    recusa, status = painel.patch(
+        f"/admin/produtos/{produto['id']}/imagens/ordem", {"ids": [restantes[0]["id"]]}
+    )
+    print(f"    HTTP {status} {json.dumps(recusa, ensure_ascii=False)}")
+    depois, _ = painel.get(f"/admin/produtos/{produto['id']}")
+    _galeria("a galeria continua intacta:", depois["imagens"], _capa_no_banco(produto["id"]))
+
+    painel.delete(f"/admin/produtos/{produto['id']}")
+    print("\n  (o produto deste passo foi excluído)")
+
+
+# ======================================================================
+# variacoes — substituição com dois carrinhos em jogo
+# ======================================================================
+
+
+def passo_variacoes() -> None:
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import ProdutoVariacao
+    from vip_api.modelos.cliente import Carrinho, CarrinhoItem
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        marca, categoria = _marca_e_categoria(sessao)
+
+    produto, _ = painel.post(
+        "/admin/produtos",
+        {"nome": "Bolsa das Variações", "marcaId": marca.id, "categoriaId": categoria.id},
+    )
+    painel.patch(
+        f"/admin/produtos/{produto['id']}/variacoes",
+        {
+            "variacoes": [
+                {"tipo": "tamanho", "valor": "M"},
+                {"tipo": "tamanho", "valor": "G"},
+                {"tipo": "cor", "valor": "Preto"},
+                {"tipo": "cor", "valor": "Bege"},
+            ]
+        },
+    )
+
+    def grade():
+        with _sessao_do_banco() as sessao:
+            return {
+                f"{v.tipo}:{v.valor}": v.id
+                for v in sessao.scalars(
+                    select(ProdutoVariacao)
+                    .where(ProdutoVariacao.produto_id == produto["id"])
+                    .order_by(ProdutoVariacao.tipo, ProdutoVariacao.valor)
+                )
+            }
+
+    ids = grade()
+    print(f"  produto {produto['codigo']} (id {produto['id']})")
+    print(f"  grade inicial: {json.dumps(ids, ensure_ascii=False)}\n")
+
+    # Dois clientes, dois carrinhos, cada um com dois itens do mesmo produto.
+    clientes = [
+        Cliente("verificacao.var1@nofear.test"),
+        Cliente("verificacao.var2@nofear.test"),
+    ]
+    for pessoa in clientes:
+        for item in pessoa.carrinho():
+            pessoa.delete(f"/carrinho/{item['itemId']}")
+        pessoa.post(
+            "/carrinho",
+            {
+                "produtoId": produto["id"],
+                "variacaoTamanhoId": ids["tamanho:M"],
+                "variacaoCorId": ids["cor:Bege"],
+            },
+        )
+        pessoa.post(
+            "/carrinho",
+            {"produtoId": produto["id"], "variacaoTamanhoId": ids["tamanho:M"]},
+        )
+
+    def mostrar_carrinhos(rotulo):
+        print(f"  {rotulo}")
+        with _sessao_do_banco() as sessao:
+            linhas = sessao.execute(
+                select(
+                    CarrinhoItem.id,
+                    Carrinho.cliente_id,
+                    CarrinhoItem.variacao_tamanho_id,
+                    CarrinhoItem.variacao_cor_id,
+                )
+                .join(Carrinho, Carrinho.id == CarrinhoItem.carrinho_id)
+                .where(CarrinhoItem.produto_id == produto["id"])
+                .order_by(CarrinhoItem.id)
+            ).all()
+        for linha in linhas:
+            print(
+                f"    item={linha.id:<6} cliente={linha.cliente_id:<4} "
+                f"tamanho={str(linha.variacao_tamanho_id):<7} cor={linha.variacao_cor_id}"
+            )
+        if not linhas:
+            print("    (nenhum item)")
+
+    mostrar_carrinhos("carrinhos ANTES (dois clientes, dois itens cada):")
+
+    nova, status = painel.patch(
+        f"/admin/produtos/{produto['id']}/variacoes",
+        {"variacoes": [{"tipo": "tamanho", "valor": "M"}, {"tipo": "cor", "valor": "Vermelha"}]},
+    )
+    print(f"\n  PATCH .../variacoes deixando só tamanho M e cor Vermelha  ->  HTTP {status}")
+    depois_ids = grade()
+    for chave, identificador in sorted(depois_ids.items()):
+        origem = "MESMO id" if ids.get(chave) == identificador else "id novo"
+        print(f"    {chave:<16} id={identificador:<7} ({origem})")
+    for chave in sorted(set(ids) - set(depois_ids)):
+        print(f"    {chave:<16} REMOVIDA (era id={ids[chave]})")
+
+    print()
+    mostrar_carrinhos("carrinhos DEPOIS:")
+
+    painel.delete(f"/admin/produtos/{produto['id']}")
+    print("\n  (o produto deste passo foi excluído)")
+
+
+# ======================================================================
+# status — os pontos de saída, antes e depois
+# ======================================================================
+
+
+def passo_status() -> None:
+    from sqlalchemy import func, select
+
+    from vip_api.modelos.catalogo import Produto
+    from vip_api.modelos.cliente import CarrinhoItem, Favorito
+
+    from vip_api.modelos.catalogo import Categoria, Colecao, Marca
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        # Um produto em destaque, com marca e categoria conhecidas, para dar
+        # para conferir a home e as contagens de navegação.
+        # O alvo tem que estar VISÍVEL em todos os pontos medidos, senão a
+        # linha de zeros não prova nada. Para os relacionados, isso exige um
+        # par (marca, categoria) pequeno: a rota devolve 8, e num grupo de 600
+        # o alvo nunca apareceria. O destaque é ligado logo abaixo, pela API.
+        grupo_pequeno = (
+            select(Produto.marca_id, Produto.categoria_id)
+            .where(Produto.status != "oculto")
+            .group_by(Produto.marca_id, Produto.categoria_id)
+            .having(func.count() <= 8)
+            .having(func.count() >= 2)
+            .limit(1)
+        ).subquery("g")
+        alvo = sessao.execute(
+            select(Produto.id, Produto.codigo, Produto.marca_id, Produto.categoria_id)
+            .join(
+                grupo_pequeno,
+                (Produto.marca_id == grupo_pequeno.c.marca_id)
+                & (Produto.categoria_id == grupo_pequeno.c.categoria_id),
+            )
+            .where(Produto.status == "normal")
+            .order_by(Produto.id)
+            .limit(1)
+        ).first()
+        marca_slug = sessao.scalar(
+            select(Marca.slug).where(Marca.id == alvo.marca_id)
+        )
+        categoria = sessao.execute(
+            select(Categoria.slug, Colecao.slug.label("colecao"))
+            .join(Colecao, Colecao.id == Categoria.colecao_id)
+            .where(Categoria.id == alvo.categoria_id)
+        ).first()
+        # Um vizinho de mesma marca e categoria: é pelos relacionados DELE que
+        # se vê se o alvo vazou.
+        vizinho = sessao.scalar(
+            select(Produto.codigo)
+            .where(
+                Produto.marca_id == alvo.marca_id,
+                Produto.categoria_id == alvo.categoria_id,
+                Produto.status == "normal",
+                Produto.id != alvo.id,
+            )
+            .limit(1)
+        )
+
+    # Destaque ligado com ordem 0: a home mostra os 12 primeiros por
+    # destaque_ordem, e o alvo precisa estar entre eles. Devolvido ao estado
+    # original no fim do passo.
+    painel.patch(f"/admin/produtos/{alvo.id}", {"destaque": True, "destaqueOrdem": 0})
+
+    pessoa = Cliente("verificacao.status@nofear.test")
+    for item in pessoa.carrinho():
+        pessoa.delete(f"/carrinho/{item['itemId']}")
+    pessoa.post("/favoritos", {"produtoId": alvo.id})
+    pessoa.post("/carrinho", {"produtoId": alvo.id})
+
+    def medir():
+        # Busca pelo código: a listagem tem 5 mil produtos e o alvo pode
+        # não cair na primeira página. Pelo código, ou ele está na lista
+        # pública ou não está.
+        listagem, _ = pessoa.get(f"/produtos?busca={alvo.codigo}")
+        detalhe, status_detalhe = pessoa.get(f"/produtos/{alvo.codigo}")
+        relacionados, _ = pessoa.get(f"/produtos/{vizinho}/relacionados")
+        home, _ = pessoa.get("/home")
+        marcas, _ = pessoa.get("/marcas")
+        categorias, _ = pessoa.get(f"/colecoes/{categoria.colecao}/categorias")
+        favoritos, _ = pessoa.get("/favoritos")
+        carrinho, _ = pessoa.get("/carrinho")
+        with _sessao_do_banco() as sessao:
+            favoritos_no_banco = sessao.scalar(
+                select(func.count()).select_from(Favorito).where(Favorito.produto_id == alvo.id)
+            )
+            carrinho_no_banco = sessao.scalar(
+                select(func.count())
+                .select_from(CarrinhoItem)
+                .where(CarrinhoItem.produto_id == alvo.id)
+            )
+        return {
+            "GET /produtos?busca=<codigo>": sum(
+                1 for i in listagem["dados"] if i["id"] == alvo.id
+            ),
+            "GET /produtos/:codigo": status_detalhe,
+            "GET /relacionados do vizinho": sum(
+                1 for i in relacionados if i["id"] == alvo.id
+            ),
+            "GET /home destaques (o alvo)": sum(
+                1 for i in home["destaques"] if i["id"] == alvo.id
+            ),
+            f"GET /marcas totalProdutos ({marca_slug})": [
+                m for m in marcas if m["slug"] == marca_slug
+            ][0]["totalProdutos"],
+            f"GET /colecoes/{categoria.colecao}/categorias ({categoria.slug})": [
+                c for c in categorias if c["slug"] == categoria.slug
+            ][0]["totalProdutos"],
+            "GET /favoritos (o alvo)": sum(1 for i in favoritos if i["id"] == alvo.id),
+            "GET /carrinho (o alvo)": sum(1 for i in carrinho if i["id"] == alvo.id),
+            "linhas de favorito no banco": favoritos_no_banco,
+            "linhas de carrinho no banco": carrinho_no_banco,
+        }
+
+    print(f"  produto {alvo.codigo} (id {alvo.id}), marca {marca_slug}, categoria {categoria.slug}\n")
+    antes = medir()
+    painel.patch(f"/admin/produtos/{alvo.id}", {"status": "oculto"})
+    oculto = medir()
+    painel.patch(f"/admin/produtos/{alvo.id}", {"status": "normal"})
+    voltou = medir()
+
+    largura = max(len(chave) for chave in antes)
+    print(f"  {'PONTO DE SAÍDA':<{largura}}  {'normal':>8} {'oculto':>8} {'normal':>8}")
+    print(f"  {'-' * largura}  {'-' * 8} {'-' * 8} {'-' * 8}")
+    for chave in antes:
+        print(f"  {chave:<{largura}}  {antes[chave]:>8} {oculto[chave]:>8} {voltou[chave]:>8}")
+
+    print(f"\n  voltou ao estado inicial: {antes == voltou}")
+    for item in pessoa.carrinho():
+        pessoa.delete(f"/carrinho/{item['itemId']}")
+    pessoa.delete(f"/favoritos/{alvo.id}")
+    painel.patch(f"/admin/produtos/{alvo.id}", {"destaque": False})
+
+
+# ======================================================================
+# filtro — o total da paginação bate com a contagem real
+# ======================================================================
+
+
+def passo_filtro() -> None:
+    from sqlalchemy import func, select
+
+    from vip_api.modelos.catalogo import Marca, Produto
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        marca = sessao.execute(
+            select(Marca.id, Marca.nome, Marca.slug).where(Marca.slug == "chanel")
+        ).first()
+        reais = {
+            filtro: sessao.scalar(
+                select(func.count()).select_from(Produto).where(*condicoes)
+            )
+            for filtro, condicoes in {
+                "sem filtro": (),
+                f"marcaId={marca.id}": (Produto.marca_id == marca.id,),
+                "status=oculto": (Produto.status == "oculto",),
+                f"marcaId={marca.id} + status=oculto": (
+                    Produto.marca_id == marca.id,
+                    Produto.status == "oculto",
+                ),
+                "busca=matelasse": (Produto.nome_ordenacao.like("%matelasse%"),),
+            }.items()
+        }
+
+    consultas = {
+        "sem filtro": "",
+        f"marcaId={marca.id}": f"&marcaId={marca.id}",
+        "status=oculto": "&status=oculto",
+        f"marcaId={marca.id} + status=oculto": f"&marcaId={marca.id}&status=oculto",
+        "busca=matelasse": "&busca=matelasse",
+    }
+
+    print(f"  marca {marca.nome} (id {marca.id})\n")
+    print(f"  {'FILTRO':<38} {'total da API':>13} {'contagem real':>14} {'bate':>6}")
+    print(f"  {'-' * 38} {'-' * 13} {'-' * 14} {'-' * 6}")
+    for rotulo, sufixo in consultas.items():
+        corpo, _ = painel.get(f"/admin/produtos?porPagina=1{sufixo}")
+        total = corpo["paginacao"]["total"]
+        print(f"  {rotulo:<38} {total:>13} {reais[rotulo]:>14} {str(total == reais[rotulo]):>6}")
+
+
 PASSOS = {
     "codigo": passo_codigo,
     "exclusao": passo_exclusao,
     "duplicar": passo_duplicar,
     "lote": passo_lote,
+    "imagens": passo_imagens,
+    "variacoes": passo_variacoes,
+    "status": passo_status,
+    "filtro": passo_filtro,
 }
 
 

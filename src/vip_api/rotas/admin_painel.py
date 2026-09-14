@@ -22,6 +22,7 @@ from vip_api.dependencias.sessao_admin import (
     exigir_admin,
 )
 from vip_api.esquemas.admin import AdminEu
+from vip_api.rotas.admin_imagens import roteador as roteador_imagens
 from vip_api.rotas.admin_produtos import roteador as roteador_produtos
 
 roteador = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(exigir_admin)])
@@ -29,6 +30,7 @@ roteador = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(exig
 # As rotas de produto entram por aqui, e é a inclusão neste roteador — e só
 # ela — que as protege. Roteador novo do painel se pendura na mesma linha.
 roteador.include_router(roteador_produtos)
+roteador.include_router(roteador_imagens)
 
 
 @roteador.get("/eu", response_model=AdminEu)

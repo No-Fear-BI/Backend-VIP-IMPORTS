@@ -43,7 +43,7 @@ from vip_api.modelos.catalogo import (
     ProdutoImagem,
     ProdutoVariacao,
 )
-from vip_api.modelos.cliente import CarrinhoItem
+from vip_api.servicos.admin_variacoes import remover_variacoes
 from vip_api.texto import normalizar
 
 POR_PAGINA_PADRAO = 50
@@ -272,11 +272,15 @@ def _prefixo_da_marca(sessao: Session, marca_id: int) -> str:
     # chamar func.split_part() duas vezes gera dois conjuntos de parâmetros e
     # o PostgreSQL não reconhece os dois como a mesma coisa.
     prefixo = func.split_part(Produto.codigo, "-", 1).label("prefixo")
+    # DESEMPATE quando a marca já usa mais de um prefixo na base: vence o
+    # MAIS FREQUENTE, e o `id` desempata o empate para a escolha não mudar de
+    # uma chamada para outra. Isso deixa de ser hipótese depois da carga da
+    # Fatia 5, em que uma marca pode chegar com códigos de duas origens.
     usado = sessao.scalar(
         select(prefixo)
         .where(Produto.marca_id == marca_id, Produto.codigo.like("%-%"))
         .group_by(prefixo)
-        .order_by(func.count().desc())
+        .order_by(func.count().desc(), func.min(Produto.id).asc())
         .limit(1)
     )
     if usado and len(usado) == 3 and usado.isalpha():
@@ -514,20 +518,24 @@ def excluir_produto(sessao: Session, produto_id: int) -> None:
     porque é o histórico do que o cliente enviou e não pode depender de o
     produto ainda existir.
 
-    OS ITENS DE CARRINHO SAEM ANTES, numa instrução própria, e não pela
-    cascata do produto. Apagar o produto apaga também as variações dele, e a FK
-    das variações no carrinho é `ON DELETE SET NULL`: um item que ficasse com
-    (tamanho, cor) = (nulo, nulo) colidiria com outro item do MESMO produto no
-    MESMO carrinho que já estivesse sem variação, porque o UNIQUE do carrinho é
-    NULLS NOT DISTINCT. Apagar os itens primeiro fecha essa janela — eles iriam
-    embora de qualquer forma, pela cascata.
+    AS VARIAÇÕES SAEM PRIMEIRO, por `remover_variacoes` — a mesma porta que a
+    substituição do conjunto usa. Apagar o produto apagaria as variações pela
+    cascata, e aí o `ON DELETE SET NULL` da FK no carrinho deixaria um item com
+    (tamanho, cor) = (nulo, nulo) colidindo com outro item do MESMO produto no
+    MESMO carrinho, sob NULLS NOT DISTINCT. `remover_variacoes` funde esses
+    itens antes; o DELETE do produto leva embora o que sobrar.
 
-    Pelo mesmo motivo é DELETE do Core, e não `sessao.delete(produto)`: o ORM
-    apagaria as variações primeiro, por causa do `cascade="all, delete-orphan"`
-    do modelo, e cairia exatamente na colisão descrita acima.
+    Por isso também é DELETE do Core e não `sessao.delete(produto)`: o ORM
+    apagaria as variações por conta própria, pelo `cascade="all, delete-orphan"`
+    do modelo, sem passar por essa resolução.
     """
     produto = _carregar(sessao, produto_id)
-    sessao.execute(delete(CarrinhoItem).where(CarrinhoItem.produto_id == produto.id))
+    ids_variacoes = list(
+        sessao.scalars(
+            select(ProdutoVariacao.id).where(ProdutoVariacao.produto_id == produto.id)
+        )
+    )
+    remover_variacoes(sessao, ids_variacoes)
     sessao.execute(delete(Produto).where(Produto.id == produto.id))
     sessao.commit()
 

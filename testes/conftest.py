@@ -188,6 +188,25 @@ def admin_logado(app_de_teste, sessao, administrador) -> TestClient:
 
 
 @pytest.fixture
+def outro_cliente(sessao) -> Cliente:
+    pessoa = Cliente(email="cliente2@teste.local", nome="Outro Cliente")
+    sessao.add(pessoa)
+    sessao.commit()
+    sessao.refresh(pessoa)
+    return pessoa
+
+
+@pytest.fixture
+def outro_cliente_logado(app_de_teste, sessao, outro_cliente) -> TestClient:
+    """Segunda conta de cliente, para o que só aparece com DOIS carrinhos
+    diferentes em jogo — como a remoção de variação que colide nos dois."""
+    token = criar_sessao_cliente(sessao, outro_cliente)
+    with TestClient(app_de_teste, client=CLIENTE_DE_ORIGEM) as http:
+        http.cookies.set("vip_sessao_cliente", token)
+        yield http
+
+
+@pytest.fixture
 def cliente_logado(app_de_teste, sessao, cliente) -> TestClient:
     """Cliente HTTP com o cookie da ÁREA DO CLIENTE — o outro sistema de
     sessão, o que não pode abrir nada do painel."""

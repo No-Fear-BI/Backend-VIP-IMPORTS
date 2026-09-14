@@ -18,7 +18,14 @@ from vip_api.esquemas.admin_produto import (
     ProdutoEditar,
     StatusProduto,
 )
+from vip_api.esquemas.admin_midia import (
+    ImagensEntrada,
+    OrdemEntrada,
+    VariacoesEntrada,
+)
 from vip_api.esquemas.base import Pagina
+from vip_api.esquemas.produto import ImagemDetalhe, VariacaoDetalhe
+from vip_api.servicos.admin_imagens import adicionar_imagens, reordenar_imagens
 from vip_api.servicos.admin_produtos import (
     POR_PAGINA_MAXIMO,
     POR_PAGINA_PADRAO,
@@ -31,6 +38,7 @@ from vip_api.servicos.admin_produtos import (
     listar_produtos,
     obter_produto,
 )
+from vip_api.servicos.admin_variacoes import definir_variacoes
 
 roteador = APIRouter(prefix="/produtos", tags=["admin"])
 
@@ -115,3 +123,33 @@ def duplicar(
     produto_id: int = Path(alias="produtoId"), sessao: Session = Depends(obter_sessao)
 ) -> ProdutoAdminDetalhe:
     return duplicar_produto(sessao, produto_id)
+
+
+@roteador.post("/{produtoId}/imagens", response_model=list[ImagemDetalhe], status_code=201)
+def imagens_acrescentar(
+    corpo: ImagensEntrada,
+    produto_id: int = Path(alias="produtoId"),
+    sessao: Session = Depends(obter_sessao),
+) -> list[ImagemDetalhe]:
+    """Devolve a galeria inteira, já renumerada — a tela não precisa recarregar
+    o produto para saber a ordem e a capa que ficaram."""
+    return adicionar_imagens(sessao, produto_id, corpo.imagens)
+
+
+@roteador.patch("/{produtoId}/imagens/ordem", response_model=list[ImagemDetalhe])
+def imagens_reordenar(
+    corpo: OrdemEntrada,
+    produto_id: int = Path(alias="produtoId"),
+    sessao: Session = Depends(obter_sessao),
+) -> list[ImagemDetalhe]:
+    return reordenar_imagens(sessao, produto_id, corpo.ids)
+
+
+@roteador.patch("/{produtoId}/variacoes", response_model=list[VariacaoDetalhe])
+def variacoes_definir(
+    corpo: VariacoesEntrada,
+    produto_id: int = Path(alias="produtoId"),
+    sessao: Session = Depends(obter_sessao),
+) -> list[VariacaoDetalhe]:
+    """SUBSTITUI o conjunto: o que não vier na lista sai."""
+    return definir_variacoes(sessao, produto_id, corpo.variacoes)

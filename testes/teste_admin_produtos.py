@@ -2,10 +2,13 @@
 
 Todas as rotas exercitadas aqui já foram provadas protegidas pela varredura de
 teste_protecao_admin.py — este arquivo cuida do comportamento delas.
+
+A exclusão de produto tem um teste de regressão próprio, junto com as outras
+duas portas da mesma armadilha, em teste_admin_variacoes.py.
 """
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from testes.fabrica import criar_categoria, criar_marca, criar_produto
 from vip_api.modelos.catalogo import Produto, ProdutoImagem, ProdutoVariacao
@@ -441,30 +444,43 @@ def teste_detalhe_por_id_traz_imagens_e_variacoes(admin_logado, produto_com_vari
     }
 
 
-def teste_excluir_produto_com_dois_itens_no_mesmo_carrinho(
-    admin_logado, cliente_logado, sessao, produto_com_variacoes
-):
-    """Regressão: o mesmo produto duas vezes no mesmo carrinho, um item com
-    tamanho e outro sem variação nenhuma.
+# ======================================================================
+# Contagem da paginação
+# ======================================================================
 
-    Apagar o produto apaga as variações, e a FK das variações no carrinho é
-    ON DELETE SET NULL — o item com tamanho viraria (nulo, nulo) e colidiria
-    com o que já estava assim, no UNIQUE NULLS NOT DISTINCT. Apareceu como 500
-    ao excluir um produto do catálogo de desenvolvimento.
-    """
-    produto = produto_com_variacoes
-    tamanho = sessao.scalar(
-        select(ProdutoVariacao.id).where(
-            ProdutoVariacao.produto_id == produto.id, ProdutoVariacao.tipo == "tamanho"
+
+def teste_total_da_listagem_respeita_os_filtros(admin_logado, sessao, catalogo):
+    """O `total` sai de um COUNT que passa pelos MESMOS filtros da página. Um
+    COUNT sem WHERE faria a tela oferecer páginas que não existem — a de número
+    3 de um filtro que só tem 12 resultados."""
+    marca = catalogo.marcas[0]
+    esperado = sessao.scalar(
+        select(func.count())
+        .select_from(Produto)
+        .where(Produto.marca_id == marca.id, Produto.status == "oculto")
+    )
+    assert esperado > 0
+
+    resposta = admin_logado.get(
+        ROTA, params={"marcaId": marca.id, "status": "oculto", "porPagina": 100}
+    )
+
+    corpo = resposta.json()
+    assert corpo["paginacao"]["total"] == esperado
+    assert len(corpo["dados"]) == esperado
+
+
+def teste_total_da_busca_respeita_o_termo(admin_logado, sessao, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    for indice in range(3):
+        criar_produto(
+            sessao, f"CHN-81{indice:02d}", f"Bolsa Matelassê {indice}", marca, categoria,
+            com_imagem=False,
         )
-    )
-    cliente_logado.post(
-        "/api/v1/carrinho", json={"produtoId": produto.id, "variacaoTamanhoId": tamanho}
-    )
-    cliente_logado.post("/api/v1/carrinho", json={"produtoId": produto.id})
-    assert len(cliente_logado.get("/api/v1/carrinho").json()) == 2
+    criar_produto(sessao, "CHN-8200", "Sapato Camurça", marca, categoria, com_imagem=False)
+    sessao.commit()
 
-    resposta = admin_logado.delete(f"{ROTA}/{produto.id}")
+    corpo = admin_logado.get(ROTA, params={"busca": "matelasse"}).json()
 
-    assert resposta.status_code == 200
-    assert cliente_logado.get("/api/v1/carrinho").json() == []
+    assert corpo["paginacao"]["total"] == 3
+    assert len(corpo["dados"]) == 3

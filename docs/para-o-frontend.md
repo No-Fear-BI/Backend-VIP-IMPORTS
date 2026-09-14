@@ -95,7 +95,7 @@ Todas estas rotas exigem a sessão de admin: sem cookie é **401**, com cookie d
   **`codigo` é opcional.** Sem ele, o backend gera no padrão da marca (`CHN-0042`): três letras da marca — as que a marca já usa nos códigos existentes — mais o próximo sequencial. Mandar um código já usado devolve **409 `CODIGO_EM_USO`**.
 - **`PATCH /api/v1/admin/produtos/:id`** — edita. **Campo ausente não muda**; `null` em `descricao` apaga o valor. Trocar o código para um já existente devolve 409. Trocar `categoriaId` move a coleção junto.
 - **`DELETE /api/v1/admin/produtos/:id`** — exclui. Some com as imagens, as variações, os favoritos e os itens de carrinho que apontavam para o produto. **As seleções já enviadas NÃO somem**: elas são histórico congelado e continuam mostrando código, nome, marca e variações como estavam no envio — só perdem o link para o produto.
-- **`POST /api/v1/admin/produtos/:id/duplicar`** — responde **201** com a cópia: mesmas imagens (na mesma ordem) e variações, código novo, nome com `(cópia)` no fim. **A cópia nasce `oculto` e sem destaque** — é rascunho até alguém terminar de editar, e uma gêmea publicada na hora apareceria na vitrine.
+- **`POST /api/v1/admin/produtos/:id/duplicar`** — responde **201** com a cópia: mesmas imagens (na mesma ordem) e variações, código novo, nome com `(cópia)` no fim. **A cópia nasce com status `oculto` e sem destaque, e isso é decisão de produto, não descuido**: duplicar é o primeiro passo de um cadastro que ainda vai ser editado, e uma gêmea publicada na hora apareceria na vitrine com o nome da original. Avise na tela — quem duplica e vai procurar a cópia no site não vai achar até mudar o status para `normal`.
 - **`PATCH /api/v1/admin/produtos/lote`** — altera vários de uma vez. Aceita **exatamente quatro campos**, e qualquer outro é **400**: `status`, `destaque`, `marcaId`, `categoriaId`. Máximo de 100 ids por chamada.
 
   ```json
@@ -109,3 +109,29 @@ Todas estas rotas exigem a sessão de admin: sem cookie é **401**, com cookie d
   ```
 
 - **`erro.detalhes` é campo novo do envelope de erro**, e opcional: some quando não há nada a processar. `campos` continua sendo o texto que vai embaixo de cada input; `detalhes` é o que a tela precisa ler como dado, não exibir como frase.
+
+## Painel administrativo — imagens e variações (tarefa 56)
+
+Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
+
+- **`POST /api/v1/admin/produtos/:id/imagens`** — acrescenta imagens **por URL**, não por upload (é o que a seção 4.2 define para esta fase; a rota continua a mesma quando passarmos a hospedar arquivo). Corpo:
+
+  ```json
+  { "imagens": [ { "url": "https://cdn.exemplo.com/a.jpg", "alt": "frente" }, { "url": "https://cdn.exemplo.com/b.jpg" } ] }
+  ```
+
+  **Só `https`** — imagem em `http` dentro de uma página `https` é bloqueada pelo navegador como conteúdo misto e o produto aparece sem foto. Máximo de **10 imagens por produto**. As novas entram **no fim** da ordem, então acrescentar foto nunca troca a capa. Responde **201** com a galeria inteira já renumerada.
+- **`PATCH /api/v1/admin/produtos/:id/imagens/ordem`** — recebe a lista COMPLETA de ids na ordem desejada: `{ "ids": [12, 10, 11] }`. Lista parcial ou com imagem de outro produto é **400** — reordenar metade deixaria a outra metade com ordem duplicada. Responde com a galeria na ordem nova.
+- **`DELETE /api/v1/admin/imagens/:id`** — apaga uma imagem (sem o produto na URL, como o contrato define) e responde com as imagens que sobraram.
+- **A ordem é sempre 1..N contígua, e a imagem de ordem 1 é a CAPA** — a que aparece na grade do site. Apagar a capa promove a seguinte automaticamente; apagar do meio fecha o buraco. Como as três rotas devolvem a galeria já acertada, a tela não precisa recalcular nada nem recarregar o produto.
+- **`PATCH /api/v1/admin/produtos/:id/variacoes`** — **SUBSTITUI o conjunto inteiro**. O que não vier na lista sai; lista vazia remove todas.
+
+  ```json
+  { "variacoes": [ { "tipo": "tamanho", "valor": "M" }, { "tipo": "cor", "valor": "Preto", "disponivel": false } ] }
+  ```
+
+  Só os tipos `tamanho` e `cor`. Valor repetido **dentro do mesmo tipo** é 400 (o mesmo valor em tipos diferentes é aceito: tamanho "Único" e cor "Único" são coisas distintas). `disponivel` é opcional e vale `true`.
+
+  **O que permanece mantém o `id`**: uma variação com o mesmo tipo e o mesmo valor não é recriada, é reaproveitada — é isso que preserva a escolha de quem já tinha aquele tamanho no carrinho. Mande sempre a grade completa, inclusive o que não mudou.
+
+  Quando uma variação sai, os itens de carrinho que a usavam perdem aquela escolha; se o cliente ficar com dois itens iguais do mesmo produto, eles viram um só. Nada disso devolve erro — é a API acertando o carrinho, e a tela do cliente vê o resultado no próximo `GET /carrinho`.
