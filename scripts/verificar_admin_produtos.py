@@ -7,7 +7,8 @@ real de desenvolvimento, com 5.000 produtos e clientes de verdade.
     python scripts/verificar_admin_produtos.py <passo>
 
 Passos: codigo, exclusao, duplicar, lote, imagens, variacoes, status, filtro,
-        marcas, categorias, banners, home, tudo
+        marcas, categorias, banners, home, destaques, destaque-oculto,
+        home-destaques, resumo, selecoes, selecao-congelada, clientes, tudo
 """
 
 import json
@@ -21,6 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # 127.0.0.1 e não "localhost": pelo nome, o urllib tenta ::1 primeiro e cada
 # requisição carrega ~2 s de espera antes de cair no IPv4.
 BASE = "http://127.0.0.1:8000/api/v1"
+
+
+def _resumir(sql: str, tamanho: int = 104) -> str:
+    return sql if len(sql) <= tamanho else sql[:tamanho] + "…"
 
 
 class Painel:
@@ -938,6 +943,354 @@ def passo_home() -> None:
     print(f"  conferem: {[b['id'] for b in home['banners']] == esperado}")
 
 
+# ======================================================================
+# destaques — substituir o conjunto e recusar o oculto
+# ======================================================================
+
+
+def _destaques_no_banco():
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import Produto
+
+    with _sessao_do_banco() as sessao:
+        return [
+            (p.id, p.codigo, p.destaque_ordem)
+            for p in sessao.scalars(
+                select(Produto)
+                .where(Produto.destaque.is_(True))
+                .order_by(Produto.destaque_ordem, Produto.id)
+            )
+        ]
+
+
+def _mostrar_destaques(rotulo):
+    print(f"  {rotulo}")
+    for identificador, codigo, ordem in _destaques_no_banco():
+        print(f"    ordem={ordem}  id={identificador:<6} {codigo}")
+
+
+def passo_destaques() -> None:
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import Produto
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        visiveis = sessao.execute(
+            select(Produto.id, Produto.codigo)
+            .where(Produto.status == "normal")
+            .order_by(Produto.id)
+            .limit(5)
+        ).all()
+        oculto = sessao.execute(
+            select(Produto.id, Produto.codigo).where(Produto.status == "oculto").limit(1)
+        ).first()
+
+    print(f"  antes: {len(_destaques_no_banco())} produtos em destaque na base\n")
+
+    primeira = [linha.id for linha in visiveis[:4]]
+    corpo, status = painel.patch("/admin/destaques/produtos", {"ids": primeira})
+    print(f"  PATCH /admin/destaques/produtos {primeira}  ->  HTTP {status} {corpo}")
+    _mostrar_destaques("depois da primeira lista:")
+
+    segunda = [visiveis[3].id, visiveis[0].id]
+    corpo, status = painel.patch("/admin/destaques/produtos", {"ids": segunda})
+    print(f"\n  PATCH com uma lista MENOR {segunda}  ->  HTTP {status} {corpo}")
+    _mostrar_destaques("depois da segunda lista:")
+
+    entraram = set(segunda) - set(primeira)
+    sairam = set(primeira) - set(segunda)
+    print(f"\n    entraram: {sorted(entraram) or '—'}")
+    print(f"    saíram:   {sorted(sairam)}")
+    print(f"    ficaram:  {sorted(set(primeira) & set(segunda))}")
+
+
+def passo_destaque_oculto() -> None:
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import Produto
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        visivel = sessao.execute(
+            select(Produto.id, Produto.codigo).where(Produto.status == "normal").limit(1)
+        ).first()
+        ocultos = sessao.execute(
+            select(Produto.id, Produto.codigo).where(Produto.status == "oculto").limit(2)
+        ).all()
+
+    pedido = [visivel.id] + [linha.id for linha in ocultos]
+    print(f"  produtos ocultos escolhidos: {[(l.id, l.codigo) for l in ocultos]}")
+    corpo, status = painel.patch("/admin/destaques/produtos", {"ids": pedido})
+    print(f"\n  PATCH /admin/destaques/produtos {pedido}")
+    print(f"    HTTP {status} {json.dumps(corpo, ensure_ascii=False)}")
+
+    print(f"\n  destaques depois da recusa: {[d[1] for d in _destaques_no_banco()]}")
+
+
+# ======================================================================
+# home — destaques na ordem definida e o orçamento de consultas
+# ======================================================================
+
+
+def passo_home_destaques() -> None:
+    painel = Painel()
+    home, status = painel.get("/home")
+    print(f"  GET /home  ->  HTTP {status}")
+    print(f"    destaques: {[d['codigo'] for d in home['destaques']]}")
+    print(f"    ordem no banco: {[d[1] for d in _destaques_no_banco()]}")
+    print(
+        "    conferem: "
+        f"{[d['id'] for d in home['destaques']] == [d[0] for d in _destaques_no_banco()]}"
+    )
+    print(f"    categorias em destaque: {[c['slug'] for c in home['categoriasDestaque']]}")
+
+
+# ======================================================================
+# resumo — a resposta e cada número conferido no banco
+# ======================================================================
+
+
+def passo_resumo() -> None:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import func, select
+
+    from vip_api.modelos.catalogo import Marca, Produto
+    from vip_api.modelos.cliente import Cliente
+    from vip_api.modelos.selecao import Selecao
+
+    painel = Painel()
+    corpo, status = painel.get("/admin/resumo")
+    print(f"  GET /admin/resumo  ->  HTTP {status}\n")
+    resumo_curto = dict(corpo)
+    resumo_curto["porMarca"] = f"[{len(corpo['porMarca'])} marcas]"
+    print(f"  {json.dumps(resumo_curto, ensure_ascii=False)}\n")
+
+    inicio = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    with _sessao_do_banco() as sessao:
+        reais = {
+            "totalProdutos": sessao.scalar(select(func.count()).select_from(Produto)),
+            "produtosEsgotados": sessao.scalar(
+                select(func.count()).select_from(Produto).where(Produto.status == "esgotado")
+            ),
+            "produtosOcultos": sessao.scalar(
+                select(func.count()).select_from(Produto).where(Produto.status == "oculto")
+            ),
+            "selecoesNoMes": sessao.scalar(
+                select(func.count()).select_from(Selecao).where(Selecao.criado_em >= inicio)
+            ),
+            "totalClientes": sessao.scalar(select(func.count()).select_from(Cliente)),
+        }
+        por_marca = dict(
+            sessao.execute(
+                select(Produto.marca_id, func.count()).group_by(Produto.marca_id)
+            ).all()
+        )
+        nomes = dict(sessao.execute(select(Marca.id, Marca.nome)).all())
+
+    print(f"  {'NÚMERO':<22} {'da API':>10} {'do banco':>10} {'bate':>6}")
+    print(f"  {'-' * 22} {'-' * 10} {'-' * 10} {'-' * 6}")
+    for chave, real in reais.items():
+        print(f"  {chave:<22} {corpo[chave]:>10} {real:>10} {str(corpo[chave] == real):>6}")
+
+    da_api = {linha["marcaId"]: linha["total"] for linha in corpo["porMarca"]}
+    divergentes = [
+        (nomes[marca_id], da_api.get(marca_id), total)
+        for marca_id, total in por_marca.items()
+        if da_api.get(marca_id) != total
+    ]
+    print(
+        f"  {'porMarca':<22} {len(corpo['porMarca']):>10} {len(por_marca):>10} "
+        f"{str(not divergentes):>6}"
+    )
+    print(f"\n  marcas divergentes: {divergentes or 'nenhuma'}")
+    print("  (a API lista marca com zero produto; o banco só agrupa as que têm)")
+
+    print("\n  três maiores da API:")
+    for linha in corpo["porMarca"][:3]:
+        print(f"    {linha['nome']:<18} {linha['total']:>5}  (banco: {por_marca[linha['marcaId']]})")
+
+
+# ======================================================================
+# selecoes — listagem, detalhe e o produto excluído
+# ======================================================================
+
+
+def _massa_de_selecoes(quantidade: int = 20, itens: int = 30):
+    """Cria seleções de mentira direto no banco, para a contagem de consultas
+    ter volume. Devolve os ids criados, que o passo apaga no fim."""
+    from sqlalchemy import select
+
+    from vip_api.banco import SessaoLocal
+    from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto
+    from vip_api.modelos.cliente import Cliente
+    from vip_api.modelos.selecao import Selecao, SelecaoItem
+
+    with SessaoLocal() as sessao:
+        cliente = sessao.scalars(select(Cliente).limit(1)).first()
+        produtos = sessao.scalars(
+            select(Produto).where(Produto.status == "normal").limit(itens)
+        ).all()
+        criadas = []
+        for _ in range(quantidade):
+            selecao = Selecao(
+                cliente_id=cliente.id,
+                cliente_nome=cliente.nome,
+                cliente_email=cliente.email,
+                cliente_telefone=cliente.telefone,
+                total_itens=len(produtos),
+            )
+            sessao.add(selecao)
+            sessao.flush()
+            for ordem, produto in enumerate(produtos, start=1):
+                sessao.add(
+                    SelecaoItem(
+                        selecao_id=selecao.id,
+                        produto_id=produto.id,
+                        produto_codigo=produto.codigo,
+                        produto_nome=produto.nome,
+                        marca_nome=sessao.get(Marca, produto.marca_id).nome,
+                        categoria_nome=sessao.get(Categoria, produto.categoria_id).nome,
+                        colecao_nome=sessao.get(Colecao, produto.colecao_id).nome,
+                        variacao_tamanho="M",
+                        variacao_cor="Preta",
+                        ordem=ordem,
+                    )
+                )
+            criadas.append(selecao.id)
+        sessao.commit()
+    return criadas
+
+
+def passo_selecoes() -> None:
+    from sqlalchemy import delete as sql_delete
+    from sqlalchemy import event, func, select
+
+    from vip_api.banco import SessaoLocal, engine
+    from vip_api.modelos.selecao import Selecao
+    from vip_api.servicos import admin_relatorios
+
+    criadas = _massa_de_selecoes()
+    print(f"  {len(criadas)} seleções de 30 itens criadas para a medição")
+
+    consultas = []
+
+    def registrar(conexao, cursor, instrucao, parametros, contexto, muitos):
+        limpa = " ".join(instrucao.split())
+        if not limpa.upper().startswith(("SAVEPOINT", "RELEASE", "ROLLBACK", "BEGIN", "COMMIT")):
+            consultas.append(limpa)
+
+    with SessaoLocal() as sessao:
+        sessao.execute(select(func.count()).select_from(Selecao))  # aquece o pool
+        event.listen(engine, "before_cursor_execute", registrar)
+        pagina = admin_relatorios.listar_selecoes(sessao, por_pagina=20)
+        event.remove(engine, "before_cursor_execute", registrar)
+
+    itens = sum(len(s.itens) for s in pagina.dados)
+    print(f"\n  GET /admin/selecoes?porPagina=20  ->  {len(pagina.dados)} seleções, {itens} itens")
+    print(f"  consultas ao banco: {len(consultas)}")
+    for indice, sql in enumerate(consultas, start=1):
+        print(f"    {indice}. {_resumir(sql)}")
+
+    with SessaoLocal() as sessao:
+        sessao.execute(sql_delete(Selecao).where(Selecao.id.in_(criadas)))
+        sessao.commit()
+    print("\n  (as seleções da medição foram apagadas)")
+
+
+def passo_selecao_congelada() -> None:
+    from sqlalchemy import select
+
+    from vip_api.modelos.catalogo import Produto
+    from vip_api.modelos.selecao import Selecao, SelecaoItem
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        # Uma seleção que tenha item com produto já excluído (produto_id nulo)
+        # e outro ainda existente.
+        alvo = sessao.scalar(
+            select(SelecaoItem.selecao_id)
+            .where(SelecaoItem.produto_id.is_(None))
+            .order_by(SelecaoItem.selecao_id.desc())
+            .limit(1)
+        )
+        if alvo is None:
+            # Nenhuma ainda: exclui um produto que está numa seleção.
+            alvo, produto_id = sessao.execute(
+                select(SelecaoItem.selecao_id, SelecaoItem.produto_id)
+                .where(SelecaoItem.produto_id.is_not(None))
+                .limit(1)
+            ).first()
+            painel.delete(f"/admin/produtos/{produto_id}")
+
+    corpo, status = painel.get(f"/admin/selecoes/{alvo}")
+    print(f"  GET /admin/selecoes/{alvo}  ->  HTTP {status}")
+    print(f"    cliente: {corpo['cliente']['email']}  ({corpo['totalItens']} itens)")
+    print(f"\n  {'PRODUTO_ID':<12} {'CÓDIGO':<12} {'MARCA':<16} NOME")
+    print(f"  {'-' * 12} {'-' * 12} {'-' * 16} {'-' * 30}")
+    for item in corpo["itens"]:
+        print(
+            f"  {str(item['produtoId']):<12} {item['codigo']:<12} "
+            f"{item['marca'][:16]:<16} {item['nome'][:30]}"
+        )
+    nulos = sum(1 for item in corpo["itens"] if item["produtoId"] is None)
+    print(f"\n    itens com produtoId nulo: {nulos} de {len(corpo['itens'])}")
+    print(f"    todos com código e nome preenchidos: {all(i['codigo'] and i['nome'] for i in corpo['itens'])}")
+
+
+# ======================================================================
+# clientes — contagem de seleções e consultas
+# ======================================================================
+
+
+def passo_clientes() -> None:
+    from sqlalchemy import event, func, select
+
+    from vip_api.banco import SessaoLocal, engine
+    from vip_api.modelos.cliente import Cliente
+    from vip_api.modelos.selecao import Selecao
+    from vip_api.servicos import admin_relatorios
+
+    consultas = []
+
+    def registrar(conexao, cursor, instrucao, parametros, contexto, muitos):
+        limpa = " ".join(instrucao.split())
+        if not limpa.upper().startswith(("SAVEPOINT", "RELEASE", "ROLLBACK", "BEGIN", "COMMIT")):
+            consultas.append(limpa)
+
+    with SessaoLocal() as sessao:
+        sessao.execute(select(func.count()).select_from(Cliente))  # aquece o pool
+        event.listen(engine, "before_cursor_execute", registrar)
+        pagina = admin_relatorios.listar_clientes(sessao, por_pagina=20)
+        event.remove(engine, "before_cursor_execute", registrar)
+
+    print(f"  GET /admin/clientes?porPagina=20  ->  {len(pagina.dados)} de {pagina.paginacao.total}")
+    print(f"  consultas ao banco: {len(consultas)}")
+    for indice, sql in enumerate(consultas, start=1):
+        print(f"    {indice}. {_resumir(sql)}")
+
+    com_selecoes = [c for c in pagina.dados if c.total_selecoes][:3]
+    if len(com_selecoes) < 3:
+        com_selecoes = (com_selecoes + pagina.dados)[:3]
+
+    print(f"\n  {'E-MAIL':<34} {'TELEFONE':<14} {'API':>5} {'BANCO':>6} {'bate':>6}")
+    print(f"  {'-' * 34} {'-' * 14} {'-' * 5} {'-' * 6} {'-' * 6}")
+    with _sessao_do_banco() as sessao:
+        for cliente in com_selecoes:
+            real = sessao.scalar(
+                select(func.count())
+                .select_from(Selecao)
+                .where(Selecao.cliente_id == cliente.id)
+            )
+            print(
+                f"  {cliente.email[:34]:<34} {str(cliente.telefone or '—'):<14} "
+                f"{cliente.total_selecoes:>5} {real:>6} "
+                f"{str(cliente.total_selecoes == real):>6}"
+            )
+
+
 PASSOS = {
     "codigo": passo_codigo,
     "exclusao": passo_exclusao,
@@ -951,6 +1304,13 @@ PASSOS = {
     "categorias": passo_categorias,
     "banners": passo_banners,
     "home": passo_home,
+    "destaques": passo_destaques,
+    "destaque-oculto": passo_destaque_oculto,
+    "home-destaques": passo_home_destaques,
+    "resumo": passo_resumo,
+    "selecoes": passo_selecoes,
+    "selecao-congelada": passo_selecao_congelada,
+    "clientes": passo_clientes,
 }
 
 

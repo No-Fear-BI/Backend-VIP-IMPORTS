@@ -8,6 +8,9 @@ conta cada ida ao banco, mostrando o SQL de cada uma.
     python scripts/contar_consultas.py relacionados CHN-0042
     python scripts/contar_consultas.py marcas
     python scripts/contar_consultas.py admin-produtos [porPagina]
+    python scripts/contar_consultas.py admin-resumo
+    python scripts/contar_consultas.py admin-selecoes [porPagina]
+    python scripts/contar_consultas.py admin-clientes [porPagina]
 """
 
 import os
@@ -20,7 +23,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from sqlalchemy import event, text  # noqa: E402
 
 from vip_api.banco import SessaoLocal, engine  # noqa: E402
-from vip_api.servicos import admin_produtos, catalogo, home, navegacao  # noqa: E402
+from vip_api.servicos import (  # noqa: E402
+    admin_produtos,
+    admin_relatorios,
+    catalogo,
+    home,
+    navegacao,
+)
 
 consultas: list[str] = []
 
@@ -73,6 +82,31 @@ def main() -> None:
                 f"{len(resultado.dados)} produtos de {resultado.paginacao.total}, "
                 f"{com_capa} com capa, "
                 f"{len({item.marca.slug for item in resultado.dados})} marcas distintas"
+            )
+        elif alvo == "admin-resumo":
+            resultado = admin_relatorios.montar_resumo(sessao)
+            descricao = (
+                f"{resultado.total_produtos} produtos "
+                f"({resultado.produtos_esgotados} esgotados, "
+                f"{resultado.produtos_ocultos} ocultos), "
+                f"{len(resultado.por_marca)} marcas, "
+                f"{resultado.selecoes_no_mes} seleções no mês, "
+                f"{resultado.total_clientes} clientes"
+            )
+        elif alvo == "admin-selecoes":
+            por_pagina = int(argumento) if argumento else 20
+            resultado = admin_relatorios.listar_selecoes(sessao, por_pagina=por_pagina)
+            itens = sum(len(s.itens) for s in resultado.dados)
+            descricao = (
+                f"{len(resultado.dados)} seleções de {resultado.paginacao.total}, "
+                f"{itens} itens congelados no total"
+            )
+        elif alvo == "admin-clientes":
+            por_pagina = int(argumento) if argumento else 20
+            resultado = admin_relatorios.listar_clientes(sessao, por_pagina=por_pagina)
+            descricao = (
+                f"{len(resultado.dados)} clientes de {resultado.paginacao.total}, "
+                f"{sum(c.total_selecoes for c in resultado.dados)} seleções somadas"
             )
         elif alvo == "marcas":
             resultado = navegacao.listar_marcas(sessao)

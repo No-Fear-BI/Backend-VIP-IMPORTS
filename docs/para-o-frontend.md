@@ -153,3 +153,17 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   **No máximo 4 banners ATIVOS** — é o carrossel contratado (proposta, item 2.1). A quinta ativação devolve **400** dizendo o limite, seja no `POST` com `ativo: true`, seja no `PATCH`. Banner **inativo não tem teto**: é rascunho e pode existir aos montes. Reenviar `ativo: true` num banner que já está ativo não conta como nova ativação, então a tela pode mandar o formulário inteiro sem medo.
 
   A ordem é 1..N contígua, como nas imagens do produto: `PATCH /admin/banners/ordem` recebe a lista COMPLETA de ids e o `DELETE` renumera o que sobrou. `GET /home` devolve só os ativos, nessa ordem.
+
+## Painel administrativo — destaques e consultas (tarefas 58 e 60)
+
+- **`PATCH /api/v1/admin/destaques/produtos`** e **`PATCH /api/v1/admin/destaques/categorias`** — recebem a lista COMPLETA de ids na ordem em que devem aparecer na home: `{ "ids": [812, 44, 930] }`. **Substituem o conjunto**: quem está na lista vira destaque com a ordem da posição, quem não está deixa de ser. Lista vazia tira todos. Respondem com os ids na ordem gravada.
+
+  **Produto `oculto` é recusado com 400**, e os ids problemáticos vêm em `erro.detalhes.ocultos` — marque-os na tela em vez de mostrar um erro genérico: o produto oculto some da home inteira, então aceitar a marcação seria deixar o cliente marcar e não ver nada. Categoria inativa é recusada pelo mesmo motivo, com `erro.detalhes.inativas`.
+
+  **Teto: 12 produtos e 8 categorias.** O dos produtos é exatamente o que a home renderiza — marcar mais do que ela mostra é marcar o que ninguém vai ver.
+- **`GET /api/v1/admin/resumo`** — os números da tela inicial: `totalProdutos`, `produtosEsgotados`, `produtosOcultos`, `porMarca` (lista com `marcaId`, `nome`, `slug` e `total`, incluindo marca com zero), `selecoesNoMes` e `totalClientes`.
+- **`GET /api/v1/admin/selecoes`** — as seleções recebidas, mais recentes primeiro, com `?pagina=` e `?porPagina=` no envelope `{dados, paginacao}` de sempre. Cada seleção traz `criadoEm`, `totalItens`, o `cliente` (id, nome, e-mail e telefone, todos congelados no envio) e os `itens`.
+- **`GET /api/v1/admin/selecoes/:id`** — o detalhe, com os mesmos itens.
+
+  **Os itens são dado CONGELADO**: `codigo`, `nome`, `marca`, `categoria`, `colecao`, `imagemUrl` e `variacao` são cópias do que o cliente viu no envio, não um JOIN com o catálogo de hoje. Se o produto foi excluído depois, `produtoId` vem `null` e o resto continua igual — não esconda o item nem tente buscar o produto por esse id sem checar o nulo.
+- **`GET /api/v1/admin/clientes`** — os clientes cadastrados, com `?busca=` (parte do e-mail ou do nome, ignorando caixa) e paginação. Cada um traz `totalSelecoes`, que é o número que diz quem vale a pena atender, mais `ultimoAcessoEm` e o **telefone** — aqui ele aparece porque é o painel, e é com ele que o atendimento responde.

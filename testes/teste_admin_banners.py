@@ -55,6 +55,10 @@ def teste_ativar_ate_quatro_e_recusar_o_quinto(admin_logado, cinco_banners):
 
 
 def teste_criar_ja_ativo_tambem_respeita_o_teto(admin_logado, cinco_banners):
+    """A OUTRA PORTA do mesmo teto: `POST` com `ativo: true`, e não só o
+    `PATCH` que ativa depois. Mesma regra, mesma recusa, mesma mensagem — é a
+    forma do bug das três portas das variações, e por isso tem teste próprio.
+    """
     for banner in cinco_banners[:LIMITE_BANNERS_ATIVOS]:
         admin_logado.patch(f"{ROTA}/{banner['id']}", json={"ativo": True})
 
@@ -63,6 +67,14 @@ def teste_criar_ja_ativo_tambem_respeita_o_teto(admin_logado, cinco_banners):
     )
 
     assert resposta.status_code == 400
+    erro = resposta.json()["erro"]
+    assert erro["codigo"] == "DADOS_INVALIDOS"
+    assert str(LIMITE_BANNERS_ATIVOS) in erro["mensagem"]
+    assert "ativo" in erro["campos"]
+    # E nada foi criado: o banner recusado não pode ficar de rascunho.
+    listagem = admin_logado.get(ROTA).json()
+    assert len(listagem) == len(cinco_banners)
+    assert sum(1 for b in listagem if b["ativo"]) == LIMITE_BANNERS_ATIVOS
 
 
 def teste_desativar_libera_vaga(admin_logado, cinco_banners):

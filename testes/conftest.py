@@ -71,7 +71,10 @@ URL_TESTE = _url_de_teste()
 _criar_banco_se_faltar(URL_TESTE)
 os.environ["DATABASE_URL"] = URL_TESTE
 
+from contextlib import contextmanager  # noqa: E402
+
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 
 from vip_api.banco import engine, obter_sessao  # noqa: E402
 from vip_api.modelos.admin import Administrador  # noqa: E402
@@ -242,3 +245,41 @@ def produto_com_variacoes(sessao):
     )
     sessao.commit()
     return produto
+
+
+# Controle de transação do SQLAlchemy, não consulta de ninguém: não conta no
+# orçamento das rotas.
+_CONTROLE = ("SAVEPOINT", "RELEASE", "ROLLBACK", "BEGIN", "COMMIT")
+
+# A consulta que resolve o cookie de admin em sessão. É UMA, igual em toda rota
+# do painel, e não pertence ao orçamento de nenhuma delas — contá-la faria o
+# teto da rota mudar se um dia a autenticação mudar de forma.
+_AUTENTICACAO = "admin_sessoes"
+
+
+@pytest.fixture
+def contar_consultas():
+    """Conta as consultas SQL de um trecho, por evento do SQLAlchemy.
+
+    É o mesmo mecanismo de scripts/contar_consultas.py, que roda à mão contra
+    a massa grande — aqui ele vira asserção: rota com orçamento de consultas
+    só continua dentro do orçamento se alguém conferir a cada alteração.
+    """
+
+    @contextmanager
+    def _contar():
+        consultas: list[str] = []
+
+        def registrar(conexao, cursor, instrucao, parametros, contexto, muitos):
+            limpa = " ".join(instrucao.split())
+            if limpa.upper().startswith(_CONTROLE) or _AUTENTICACAO in limpa:
+                return
+            consultas.append(limpa)
+
+        event.listen(engine, "before_cursor_execute", registrar)
+        try:
+            yield consultas
+        finally:
+            event.remove(engine, "before_cursor_execute", registrar)
+
+    return _contar

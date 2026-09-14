@@ -28,6 +28,12 @@ from vip_api.rotas.admin_catalogo import (
     roteador_marcas,
 )
 from vip_api.rotas.admin_imagens import roteador as roteador_imagens
+from vip_api.rotas.admin_relatorios import (
+    roteador_clientes,
+    roteador_destaques,
+    roteador_resumo,
+    roteador_selecoes,
+)
 from vip_api.rotas.admin_produtos import roteador as roteador_produtos
 
 roteador = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(exigir_admin)])
@@ -39,6 +45,10 @@ roteador.include_router(roteador_imagens)
 roteador.include_router(roteador_marcas)
 roteador.include_router(roteador_categorias)
 roteador.include_router(roteador_banners)
+roteador.include_router(roteador_destaques)
+roteador.include_router(roteador_resumo)
+roteador.include_router(roteador_selecoes)
+roteador.include_router(roteador_clientes)
 
 
 @roteador.get("/eu", response_model=AdminEu)
