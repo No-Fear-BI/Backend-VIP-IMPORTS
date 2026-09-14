@@ -550,7 +550,7 @@ Repare que **não há preço congelado**, porque não há preço em lugar nenhum
 |---|---|---|---|---|---|
 | `id` | `integer` | não | identity | PK | |
 | `nome` | `varchar(120)` | não | — | — | |
-| `email` | `citext` | não | — | UNIQUE | Login. Totalmente independente de `clientes.email` — o mesmo endereço pode existir nas duas tabelas sem nenhuma relação entre elas. |
+| `email` | `citext` | não | — | UNIQUE + CHECK `email = lower(email)` | Login. Totalmente independente de `clientes.email` — o mesmo endereço pode existir nas duas tabelas sem nenhuma relação entre elas. O `citext` resolve a comparação; a CHECK (revisão 0006) resolve a forma gravada, para o painel e o log não mostrarem "Jose@X.com". Não é tautologia: `lower()` devolve `text`, e citext comparado com text usa o operador de text, que diferencia caixa. |
 | `senha_hash` | `text` | não | — | — | **argon2id.** Algoritmo lento e com uso alto de memória, desenhado para tornar caro o ataque de força bruta contra senha humana. O hash já carrega sal e parâmetros dentro da própria string, então não existe coluna de sal separada. |
 | `senha_alterada_em` | `timestamptz` | não | `now()` | — | Atualizada toda vez que a senha muda. É o que permite invalidar sessões abertas sem apagar linha por linha de `admin_sessoes`: a checagem de sessão compara `admin_sessoes.criado_em` com `administradores.senha_alterada_em` — sessão criada antes da última troca de senha é tratada como inválida. |
 | `ativo` | `boolean` | não | `true` | — | Desligar admin sem apagar e perder o rastro de quem decidiu o quê. |
@@ -558,7 +558,7 @@ Repare que **não há preço congelado**, porque não há preço em lugar nenhum
 | `criado_em` | `timestamptz` | não | `now()` | — | |
 | `atualizado_em` | `timestamptz` | não | `now()` | — | |
 
-**Decidido:** não há rota de cadastro nem de troca de senha pela API — a proposta comercial (item 2.4) não contratou isso, e o contrato só tem `POST`/`DELETE /admin/sessao`. Duas contas no lançamento (cliente No Fear e suporte No Fear), criadas e com senha trocada por **comando de linha** (um script `alembic`-adjacent ou Typer, fora do escopo desta tarefa). Por isso a migração de dados de referência (tarefa 2, revisão 0002) não semeia nenhum administrador — contas de admin não são dado de referência do esquema, são operação manual de quem sobe o ambiente.
+**Decidido:** não há rota de cadastro nem de troca de senha pela API — a proposta comercial (item 2.4) não contratou isso, e o contrato só tem `POST`/`DELETE /admin/sessao`. Duas contas no lançamento (cliente No Fear e suporte No Fear), criadas e com senha trocada por **comando de linha** — `scripts/criar_admin.py` e `scripts/trocar_senha_admin.py`, escritos na fatia 4. Por isso a migração de dados de referência (tarefa 2, revisão 0002) não semeia nenhum administrador — contas de admin não são dado de referência do esquema, são operação manual de quem sobe o ambiente.
 
 ### 4.16 `admin_sessoes`
 

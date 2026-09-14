@@ -12,6 +12,7 @@ from sqlalchemy import (
     CHAR,
     BigInteger,
     Boolean,
+    CheckConstraint,
     ForeignKeyConstraint,
     Identity,
     Integer,
@@ -29,7 +30,13 @@ from vip_api.modelos.base import Base
 
 class Administrador(Base):
     __tablename__ = "administradores"
-    __table_args__ = (UniqueConstraint("email", name="uq_administradores_email"),)
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_administradores_email"),
+        # citext resolve a COMPARAÇÃO; esta CHECK (revisão 0006) resolve a
+        # forma GRAVADA. Não é tautologia: `lower()` devolve text, e citext
+        # comparado com text usa o operador de text, que diferencia caixa.
+        CheckConstraint("email = lower(email)", name="ck_administradores_email_minusculo"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     nome: Mapped[str] = mapped_column(String(120))

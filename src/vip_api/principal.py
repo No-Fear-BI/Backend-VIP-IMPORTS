@@ -13,6 +13,7 @@ from vip_api.erros.manipuladores import (
     tratar_erro_validacao,
     tratar_excecao_nao_tratada,
 )
+from vip_api.rotas.admin_sessao import roteador as roteador_admin_sessao
 from vip_api.rotas.carrinho import roteador as roteador_carrinho
 from vip_api.rotas.clientes import roteador as roteador_clientes
 from vip_api.rotas.favoritos import roteador as roteador_favoritos
@@ -56,5 +57,9 @@ roteador_v1.include_router(roteador_clientes)
 roteador_v1.include_router(roteador_favoritos)
 roteador_v1.include_router(roteador_carrinho)
 roteador_v1.include_router(roteador_selecoes)
+# Login, logout e /admin/eu ficam FORA do roteador protegido do painel
+# (tarefa 54): exigir sessão de admin para abrir a sessão de admin
+# trancaria o painel para quem tem a senha certa.
+roteador_v1.include_router(roteador_admin_sessao)
 
 app.include_router(roteador_v1)

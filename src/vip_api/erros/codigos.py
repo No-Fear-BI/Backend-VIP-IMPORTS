@@ -17,6 +17,10 @@ CURSOR_INVALIDO = "CURSOR_INVALIDO"
 PARAMETRO_OBRIGATORIO = "PARAMETRO_OBRIGATORIO"
 NAO_IDENTIFICADO = "NAO_IDENTIFICADO"
 SEM_PERMISSAO = "SEM_PERMISSAO"
+# Login do painel. Um código só para e-mail inexistente, senha errada e
+# conta inativa: códigos diferentes diriam quais e-mails são de
+# administrador, que é a mesma informação que o tempo de resposta entrega.
+CREDENCIAIS_INVALIDAS = "CREDENCIAIS_INVALIDAS"
 CODIGO_EM_USO = "CODIGO_EM_USO"
 MARCA_COM_PRODUTOS = "MARCA_COM_PRODUTOS"
 CATEGORIA_COM_PRODUTOS = "CATEGORIA_COM_PRODUTOS"

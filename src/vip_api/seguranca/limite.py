@@ -17,7 +17,14 @@ from vip_api.erros.excecoes import AppError
 from vip_api.modelos.acesso_tentativas import TentativaAcesso
 
 ESCOPO_IDENTIFICACAO = "identificacao"
+# Balde separado do da identificação do cliente (revisão 0006): mesma
+# tabela, contagens que não se somam. Sem isso, um visitante teimoso na
+# loja trancaria o login do painel.
+ESCOPO_LOGIN_ADMIN = "admin_login"
 LIMITE_POR_MINUTO = 10
+# Mais apertado que o do cliente: são duas contas, e ninguém erra a
+# própria senha cinco vezes no mesmo minuto sem ser um script.
+LIMITE_LOGIN_ADMIN = 5
 # Uma linha por IP por minuto acumula para sempre se ninguém limpar. A limpeza
 # roda por amostragem (1 em cada 100 tentativas) em vez de num cron separado —
 # é uma tabela pequena e o custo diluído é menor que manter uma rotina à parte.

@@ -53,4 +53,20 @@ Formato de resposta, envelope de erro (`erro.codigo`/`erro.mensagem`/`erro.campo
 - **`POST /selecoes` NÃO esvazia o carrinho.** Se a pessoa abrir o link do WhatsApp e fechar sem mandar a mensagem, esvaziar teria destruído a seleção dela. Se a tela quiser oferecer "limpar seleção", é um botão que chama `DELETE /carrinho/:itemId` item a item — o backend não faz isso sozinho.
 - **Em `POST /selecoes` e `GET /selecoes`, `variacao` é um rótulo pronto para exibir.** Vem composto das duas variações congeladas no envio: `"M / Preto"` com as duas, `"M"` ou `"Preto"` com uma só, `null` sem nenhuma. É o mesmo texto que aparece na mensagem do WhatsApp — não monte esse rótulo na tela.
 - **`linkWhatsapp` vem pronto do backend.** Não monte o link no frontend e não guarde o número da loja lá: ele vive só na configuração do servidor. O texto já vai percent-encoded; basta abrir a URL.
-- **Códigos de erro novos:** `CARRINHO_VAZIO` (400, `POST /selecoes` sem itens), `ITEM_NAO_ENCONTRADO` (404, item do carrinho inexistente **ou de outro cliente** — a API não distingue os dois casos de propósito) e `VARIACAO_INVALIDA` (400, variação que não pertence ao produto **ou que não é do tipo do campo** — cor mandada em `variacaoTamanhoId`, por exemplo; `erro.campos` diz qual dos dois campos recusou).
+- **Códigos de erro novos:** `CARRINHO_VAZIO` (400, `POST /selecoes` sem itens), `ITEM_NAO_ENCONTRADO` (404, item do carrinho inexistente **ou de outro cliente** — a API não distingue os dois casos de propósito), `CREDENCIAIS_INVALIDAS` (401, login do painel recusado — e-mail, senha ou conta desativada, sem distinguir qual) e `VARIACAO_INVALIDA` (400, variação que não pertence ao produto **ou que não é do tipo do campo** — cor mandada em `variacaoTamanhoId`, por exemplo; `erro.campos` diz qual dos dois campos recusou).
+
+## Painel administrativo — acesso (fatia 4)
+
+- **O painel tem sessão PRÓPRIA, cookie próprio e prazo próprio.** O cookie é `vip_sessao_admin`, sem nenhuma relação com o `vip_sessao_cliente` da loja: os dois convivem no mesmo navegador, e estar logado em um não muda nada no outro. Nenhum token de cliente abre o painel.
+- **`POST /api/v1/admin/sessao`** — login. Corpo:
+
+  ```json
+  { "email": "painel@nofear.com.br", "senha": "..." }
+  ```
+
+  200 devolve o administrador (`id`, `nome`, `email`, `ultimoLoginEm`, `criadoEm`) e grava o cookie. Falha devolve **401 com `CREDENCIAIS_INVALIDAS`** — e é sempre a MESMA resposta para e-mail que não existe, senha errada e conta desativada. Não tente distinguir os três na tela: o backend não distingue de propósito, inclusive no tempo de resposta. Mostre uma mensagem só: "E-mail ou senha inválidos."
+- **`DELETE /api/v1/admin/sessao`** — sair. Responde `200 {"ok": true}`, revoga a sessão no banco e limpa o cookie. Funciona mesmo com a sessão já expirada.
+- **`GET /api/v1/admin/eu`** — é a rota que o painel chama ao abrir para saber se a sessão ainda vale. 200 com o administrador; **401** (`NAO_IDENTIFICADO`) quando não há sessão de admin — mande para a tela de login; **403** (`SEM_PERMISSAO`) quando quem bate está logado como CLIENTE — aí não adianta mandar para o login do painel, essa conta não tem senha de admin.
+- **A sessão do painel dura 12 horas e NÃO renova com o uso.** Ao contrário da sessão do cliente, que se estende sozinha, aqui o relógio corre desde o login: passadas as 12 horas, qualquer chamada volta 401 e é login de novo. Trate 401 em qualquer rota do painel como "sessão acabou", não como erro da tela.
+- **Limite de 5 logins por minuto por IP**, com **429** e `EXCESSO_TENTATIVAS` — contagem separada da identificação do cliente, então estourar um não bloqueia o outro.
+- **Não existe rota de cadastro nem de troca de senha de administrador.** As contas são criadas e têm a senha trocada por comando de linha no servidor (`scripts/criar_admin.py` e `scripts/trocar_senha_admin.py`). Trocar a senha derruba as sessões abertas daquele administrador na hora.
