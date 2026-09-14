@@ -1,8 +1,14 @@
-"""Login, logout e "quem sou eu" do painel.
+"""Login e logout do painel — as DUAS rotas administrativas sem proteção.
 
-Estas três rotas ficam FORA do roteador protegido do painel (tarefa 54,
-amanhã): exigir sessão de admin para abrir a sessão de admin tranca o painel
-para todo mundo, inclusive para quem tem a senha certa.
+É a única exceção ao roteador protegido (rotas/admin_painel.py), e é uma
+exceção obrigatória: exigir sessão de admin para abrir a sessão de admin
+tranca o painel para todo mundo, inclusive para quem tem a senha certa. O
+logout fica junto porque precisa funcionar com a sessão já expirada — senão o
+cookie morto fica no navegador sem jeito de sair.
+
+Qualquer rota nova que precise ficar aqui fora tem que aparecer na lista de
+exceções de testes/teste_protecao_admin.py, que é onde a decisão fica visível
+na revisão do PR.
 """
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -11,8 +17,6 @@ from sqlalchemy.orm import Session
 from vip_api.banco import obter_sessao
 from vip_api.dependencias.sessao_admin import (
     NOME_COOKIE,
-    AdminAutenticado,
-    admin_autenticado,
     gravar_cookie_admin,
     limpar_cookie_admin,
 )
@@ -63,9 +67,3 @@ def sair(
     encerrar_sessao_admin(sessao, requisicao.cookies.get(NOME_COOKIE, ""))
     limpar_cookie_admin(resposta)
     return {"ok": True}
-
-
-@roteador.get("/admin/eu", response_model=AdminEu)
-def eu(atual: AdminAutenticado = Depends(admin_autenticado)) -> AdminEu:
-    """É a rota que o painel chama ao abrir para saber se a sessão ainda vale."""
-    return AdminEu.model_validate(atual.administrador)

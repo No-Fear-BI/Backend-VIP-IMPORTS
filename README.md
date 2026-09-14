@@ -7,3 +7,24 @@ Para subir o banco, copie `.env.example` para `.env` (os valores padrão já fun
 Para rodar as migrações, crie um ambiente virtual Python 3.12+ e instale as dependências com `pip install -e .`, exporte `DATABASE_URL` (o mesmo valor do `.env`, ou `set -a; source .env; set +a` no bash) e rode `alembic upgrade head` a partir da raiz do projeto. Isso cria o esquema inteiro — tabelas, tipos enumerados, índices — e semeia as duas coleções fixas (Feminino e Masculino). Para reverter tudo, `alembic downgrade base`; para ver o histórico, `alembic history`.
 
 Para derrubar o ambiente, `docker compose down` para o container mantendo os dados, ou `docker compose down -v` para apagar também o volume e começar do zero na próxima subida. Não existe `Dockerfile` da aplicação ainda — isso entra numa tarefa posterior, junto com as rotas e os modelos SQLAlchemy.
+
+## Testes
+
+```
+pip install -e ".[dev]"
+pytest
+```
+
+O `pytest` roda contra um banco PRÓPRIO — a `DATABASE_URL` do `.env` com o
+sufixo `_teste` no nome do banco (ou `DATABASE_URL_TESTE`, se você preferir
+outro). Ele é criado sozinho na primeira execução, recebe as migrações do
+Alembic e nunca é o banco de desenvolvimento: `testes/conftest.py` se recusa a
+rodar se o nome não terminar em `_teste`. Cada teste roda dentro de uma
+transação revertida no fim, então nada fica para trás entre um teste e outro.
+
+`pytest -s` mostra a tabela da varredura de proteção do painel (rota, método e
+os códigos sem cookie, com cookie de cliente e com cookie de admin).
+
+Os scripts de `scripts/` continuam existindo para rodar à mão contra a massa
+grande do banco de desenvolvimento; os testes são a versão rápida, que roda a
+cada alteração.

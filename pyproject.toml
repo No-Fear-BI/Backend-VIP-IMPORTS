@@ -17,6 +17,27 @@ dependencies = [
     "argon2-cffi>=23.1,<26.0",
 ]
 
+[project.optional-dependencies]
+# Dependencias de DESENVOLVIMENTO. Instale com: pip install -e ".[dev]"
+# Sem pytest-asyncio: a aplicacao e sincrona de ponta a ponta (ver banco.py) e
+# o TestClient do Starlette tambem e — nao ha corrotina para orquestrar.
+dev = [
+    "pytest>=8.0",
+    # O TestClient do Starlette e construido sobre o httpx; sem ele os testes
+    # nem coletam.
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+# O pacote mora em src/ e nao esta instalado no ambiente: sem isto, o
+# conftest nao acha vip_api.
+pythonpath = ["src", "."]
+testpaths = ["testes"]
+# Arquivos e funcoes em portugues, como o resto do projeto.
+python_files = ["teste_*.py"]
+python_functions = ["teste_*"]
+addopts = "-ra --strict-markers"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

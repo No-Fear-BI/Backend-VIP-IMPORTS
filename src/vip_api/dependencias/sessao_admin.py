@@ -84,3 +84,16 @@ def admin_autenticado(
     administrador, sessao_admin = encontrado
     # Nada de renovar_se_necessario aqui: a sessão do painel não desliza.
     return AdminAutenticado(administrador=administrador, sessao_admin=sessao_admin)
+
+
+def exigir_admin(atual: AdminAutenticado = Depends(admin_autenticado)) -> None:
+    """Dependência DO GRUPO: vai em `APIRouter(dependencies=[...])`, uma vez,
+    e vale para toda rota registrada ali — inclusive a que alguém acrescentar
+    amanhã sem lembrar de proteger.
+
+    Não devolve nada de propósito: dependência de grupo tem o retorno
+    descartado pelo FastAPI. Quem precisa do administrador declara
+    `Depends(admin_autenticado)` no parâmetro, e o FastAPI reaproveita a
+    resolução já feita nesta mesma requisição — não confere a sessão duas
+    vezes.
+    """
