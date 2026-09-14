@@ -135,3 +135,21 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   **O que permanece mantém o `id`**: uma variação com o mesmo tipo e o mesmo valor não é recriada, é reaproveitada — é isso que preserva a escolha de quem já tinha aquele tamanho no carrinho. Mande sempre a grade completa, inclusive o que não mudou.
 
   Quando uma variação sai, os itens de carrinho que a usavam perdem aquela escolha; se o cliente ficar com dois itens iguais do mesmo produto, eles viram um só. Nada disso devolve erro — é a API acertando o carrinho, e a tela do cliente vê o resultado no próximo `GET /carrinho`.
+
+## Painel administrativo — marcas, categorias e banners (tarefa 57)
+
+- **`GET` / `POST /api/v1/admin/marcas`, `PATCH` / `DELETE /api/v1/admin/marcas/:id`.** A listagem traz `totalProdutos` por marca (contando os ocultos, é o painel) — mostre esse número na tela ANTES do botão de excluir.
+
+  **O slug nasce do nome na criação e não muda sozinho depois.** Editar o nome de "chanel" para "Chanel" NÃO troca o slug: a URL `/marcas/chanel` já foi compartilhada e indexada. Para trocar o slug, mande o campo `slug` no corpo — aí é decisão consciente, e a tela deveria avisar que links antigos param de funcionar. Slug informado que já existe é **409 `SLUG_EM_USO`**; slug gerado que colide ganha sufixo (`prada-2`) em vez de erro.
+- **`GET` / `POST /api/v1/admin/categorias`, `PATCH` / `DELETE /api/v1/admin/categorias/:id`.** Aceita `?colecaoId=` na listagem. Cada categoria traz `colecaoId`, `colecaoSlug` e `totalProdutos`.
+
+  **O slug é único POR COLEÇÃO, não global**: "bolsas" existe em Feminino e em Masculino e são categorias diferentes. Repetir dentro da MESMA coleção é 409; na outra é normal. Por isso o link público precisa das duas coisas: `?colecao=feminino&categoria=bolsas`.
+
+  **Trocar a coleção de uma categoria que já tem produtos é recusado com 409** (`CATEGORIA_COM_PRODUTOS`), e a mensagem diz o caminho: criar a categoria na coleção certa e mover os produtos com `PATCH /admin/produtos/lote`, que move a coleção junto. Categoria sem produto troca de coleção normalmente.
+- **Excluir marca ou categoria com produtos é 409**, com a contagem na mensagem ("Não é possível excluir: 643 produtos usam esta marca.") e o número em `erro.detalhes.totalProdutos`. Sem produtos, exclui normalmente — o 409 não é um "não" permanente.
+- **Não existe CRUD de coleções.** São duas, fixas (Feminina e Masculina), e o contrato não tem rota para elas. Use `GET /colecoes` para preencher o seletor.
+- **`GET` / `POST /api/v1/admin/banners`, `PATCH` / `DELETE /api/v1/admin/banners/:id`, `PATCH /api/v1/admin/banners/ordem`.** Campos: `imagemUrl` (https, obrigatória), `imagemUrlMobile`, `titulo`, `subtitulo`, `alt`, `linkUrl`, `ordem` e `ativo`.
+
+  **No máximo 4 banners ATIVOS** — é o carrossel contratado (proposta, item 2.1). A quinta ativação devolve **400** dizendo o limite, seja no `POST` com `ativo: true`, seja no `PATCH`. Banner **inativo não tem teto**: é rascunho e pode existir aos montes. Reenviar `ativo: true` num banner que já está ativo não conta como nova ativação, então a tela pode mandar o formulário inteiro sem medo.
+
+  A ordem é 1..N contígua, como nas imagens do produto: `PATCH /admin/banners/ordem` recebe a lista COMPLETA de ids e o `DELETE` renumera o que sobrou. `GET /home` devolve só os ativos, nessa ordem.

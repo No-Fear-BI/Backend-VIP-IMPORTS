@@ -22,6 +22,10 @@ SEM_PERMISSAO = "SEM_PERMISSAO"
 # administrador, que é a mesma informação que o tempo de resposta entrega.
 CREDENCIAIS_INVALIDAS = "CREDENCIAIS_INVALIDAS"
 CODIGO_EM_USO = "CODIGO_EM_USO"
+# Slug de marca ou de categoria já usado. Separado de CODIGO_EM_USO, que é
+# do código do produto: são campos diferentes em telas diferentes, e o
+# frontend marca o input pelo código do erro.
+SLUG_EM_USO = "SLUG_EM_USO"
 MARCA_COM_PRODUTOS = "MARCA_COM_PRODUTOS"
 CATEGORIA_COM_PRODUTOS = "CATEGORIA_COM_PRODUTOS"
 EXCESSO_TENTATIVAS = "EXCESSO_TENTATIVAS"

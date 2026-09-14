@@ -41,3 +41,32 @@ identificar o cliente e abrir a sessão.
   isso, qualquer visitante forjaria um IP diferente a cada tentativa e o limite
   não valeria nada; e sem tratar o cabeçalho, todos os visitantes chegariam com
   o IP do proxy e o primeiro que estourasse o limite trancaria o site inteiro.
+
+## Mexer nas variações mexe no carrinho de quem já escolheu
+
+Quando o painel remove uma variação — tirando um tamanho da grade, trocando o
+conjunto inteiro em `PATCH /admin/produtos/:id/variacoes` ou excluindo o
+produto — **os itens de carrinho que tinham escolhido aquela variação perdem
+aquela escolha**. O item continua lá, com o produto e com a outra variação, mas
+o campo removido fica vazio. E se, sem ela, o item ficar idêntico a outro item
+do mesmo produto no mesmo carrinho, os dois viram um só: o carrinho do cliente
+diminui em uma linha sem que ele tenha tocado em nada.
+
+Isso é deliberado, e a alternativa era pior. Perder a cor é melhor que perder o
+item: o produto continua na seleção, o cliente continua vendo o que escolheu, e
+o atendimento confirma a cor na conversa — que é como a loja funciona de todo
+jeito, já que não há estoque nem checkout. Apagar o item inteiro esvaziaria a
+seleção de quem montou uma lista com dez produtos porque o dono da loja
+corrigiu um cadastro; e recusar a alteração no painel deixaria o catálogo
+travado por causa de um carrinho de visitante que talvez nunca volte.
+
+**O que o dono da loja precisa saber:** mexer na grade de variações de um
+produto muito adicionado mexe, sim, nas seleções em andamento. O efeito é
+silencioso — não há aviso na tela do cliente, e ele só percebe ao abrir o
+carrinho de novo. Se a mudança for grande (trocar a grade inteira de um produto
+popular), o menos pior é criar um produto novo e ocultar o antigo, em vez de
+reescrever a grade do que já está circulando.
+
+Vale para as três portas do mesmo caminho: exclusão de produto, remoção de uma
+variação e substituição do conjunto. Todas passam pela mesma função de serviço
+(`remover_variacoes`), com teste de regressão para cada uma.

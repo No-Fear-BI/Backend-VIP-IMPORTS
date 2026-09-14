@@ -1,4 +1,4 @@
-"""Verificação das rotas de produto do painel, contra a massa grande.
+"""Verificação das rotas do painel, contra a massa grande.
 
 Os testes de testes/teste_admin_produtos.py já cobrem estas regras e rodam em
 segundos; este roteiro existe para ver o antes e o depois em cima do catálogo
@@ -6,7 +6,8 @@ real de desenvolvimento, com 5.000 produtos e clientes de verdade.
 
     python scripts/verificar_admin_produtos.py <passo>
 
-Passos: codigo, exclusao, duplicar, lote, imagens, variacoes, status, filtro, tudo
+Passos: codigo, exclusao, duplicar, lote, imagens, variacoes, status, filtro,
+        marcas, categorias, banners, home, tudo
 """
 
 import json
@@ -726,6 +727,217 @@ def passo_filtro() -> None:
         print(f"  {rotulo:<38} {total:>13} {reais[rotulo]:>14} {str(total == reais[rotulo]):>6}")
 
 
+# ======================================================================
+# marcas — slug na criação, slug intacto na edição
+# ======================================================================
+
+
+def passo_marcas() -> None:
+    from sqlalchemy import func, select
+
+    from vip_api.modelos.catalogo import Marca, Produto
+
+    painel = Painel()
+
+    criada, status = painel.post("/admin/marcas", {"nome": "Maison Margiela"})
+    print(f"  POST /admin/marcas {{'nome': 'Maison Margiela'}}  ->  HTTP {status}")
+    print(f"    slug gerado: {criada['slug']!r}")
+
+    editada, status = painel.patch(
+        f"/admin/marcas/{criada['id']}", {"nome": "MAISON MARGIELA Paris"}
+    )
+    print(f"\n  PATCH só com o nome  ->  HTTP {status}")
+    print(f"    nome:  {editada['nome']!r}")
+    print(f"    slug:  {editada['slug']!r}  (intacto)")
+
+    com_slug, status = painel.patch(
+        f"/admin/marcas/{criada['id']}", {"slug": "Maison Margiela Paris"}
+    )
+    print(f"\n  PATCH mandando slug  ->  HTTP {status}")
+    print(f"    slug:  {com_slug['slug']!r}  (normalizado)")
+
+    painel.delete(f"/admin/marcas/{criada['id']}")
+
+    # --- 409 com a contagem, conferida contra o banco --------------------
+    with _sessao_do_banco() as sessao:
+        alvo = sessao.execute(
+            select(Marca.id, Marca.nome, func.count(Produto.id).label("total"))
+            .join(Produto, Produto.marca_id == Marca.id)
+            .group_by(Marca.id)
+            .order_by(func.count(Produto.id).desc())
+            .limit(1)
+        ).first()
+
+    corpo, status = painel.delete(f"/admin/marcas/{alvo.id}")
+    print(f"\n  DELETE /admin/marcas/{alvo.id} ({alvo.nome}, com produtos)  ->  HTTP {status}")
+    print(f"    {json.dumps(corpo, ensure_ascii=False)}")
+    print(f"    contagem real no banco: {alvo.total}")
+
+    vazia, _ = painel.post("/admin/marcas", {"nome": "Marca de Verificação"})
+    corpo, status = painel.delete(f"/admin/marcas/{vazia['id']}")
+    print(f"\n  DELETE de uma marca SEM produtos  ->  HTTP {status} {json.dumps(corpo)}")
+
+
+# ======================================================================
+# categorias — slug por coleção e a troca de coleção
+# ======================================================================
+
+
+def passo_categorias() -> None:
+    from sqlalchemy import func, select
+
+    from vip_api.modelos.catalogo import Categoria, Colecao, Produto
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        colecoes = {c.slug: c.id for c in sessao.scalars(select(Colecao))}
+
+    feminino, status_f = painel.post(
+        "/admin/categorias", {"nome": "Echarpes", "colecaoId": colecoes["feminino"]}
+    )
+    masculino, status_m = painel.post(
+        "/admin/categorias", {"nome": "Echarpes", "colecaoId": colecoes["masculino"]}
+    )
+    print("  POST /admin/categorias 'Echarpes' nas duas coleções:")
+    print(f"    feminino:  HTTP {status_f}  id={feminino['id']} slug={feminino['slug']!r}")
+    print(f"    masculino: HTTP {status_m}  id={masculino['id']} slug={masculino['slug']!r}")
+
+    repetida, status = painel.post(
+        "/admin/categorias",
+        {"nome": "Echarpes", "colecaoId": colecoes["feminino"], "slug": "echarpes"},
+    )
+    print(f"\n  POST repetindo 'echarpes' na MESMA coleção  ->  HTTP {status}")
+    print(f"    {json.dumps(repetida, ensure_ascii=False)}")
+
+    for identificador in (feminino["id"], masculino["id"]):
+        painel.delete(f"/admin/categorias/{identificador}")
+
+    # --- troca de coleção com produtos ----------------------------------
+    with _sessao_do_banco() as sessao:
+        alvo = sessao.execute(
+            select(
+                Categoria.id,
+                Categoria.nome,
+                Categoria.slug,
+                Categoria.colecao_id,
+                func.count(Produto.id).label("total"),
+            )
+            .join(Produto, Produto.categoria_id == Categoria.id)
+            .group_by(Categoria.id)
+            .order_by(func.count(Produto.id).desc())
+            .limit(1)
+        ).first()
+        colecao_atual = sessao.scalar(select(Colecao.slug).where(Colecao.id == alvo.colecao_id))
+
+    destino = [nome for nome in colecoes if nome != colecao_atual][0]
+    print(
+        f"\n  categoria {alvo.nome!r} (id {alvo.id}, slug {alvo.slug!r}), "
+        f"coleção {colecao_atual}, {alvo.total} produtos"
+    )
+
+    def estado():
+        with _sessao_do_banco() as sessao:
+            categoria = sessao.execute(
+                select(Categoria.colecao_id, Colecao.slug)
+                .join(Colecao, Colecao.id == Categoria.colecao_id)
+                .where(Categoria.id == alvo.id)
+            ).first()
+            produtos = sessao.execute(
+                select(Produto.colecao_id, func.count())
+                .where(Produto.categoria_id == alvo.id)
+                .group_by(Produto.colecao_id)
+            ).all()
+        return categoria.slug, {linha[0]: linha[1] for linha in produtos}
+
+    antes = estado()
+    print(f"    ANTES  — coleção da categoria: {antes[0]}, produtos por coleção: {antes[1]}")
+
+    corpo, status = painel.patch(
+        f"/admin/categorias/{alvo.id}", {"colecaoId": colecoes[destino]}
+    )
+    print(f"\n  PATCH mudando a coleção para {destino}  ->  HTTP {status}")
+    print(f"    {json.dumps(corpo, ensure_ascii=False)}")
+
+    depois = estado()
+    print(f"\n    DEPOIS — coleção da categoria: {depois[0]}, produtos por coleção: {depois[1]}")
+    print(f"    nada mudou: {antes == depois}")
+
+    corpo, status = painel.delete(f"/admin/categorias/{alvo.id}")
+    print(f"\n  DELETE da mesma categoria  ->  HTTP {status}")
+    print(f"    {json.dumps(corpo, ensure_ascii=False)}")
+
+
+# ======================================================================
+# banners — teto de quatro ativos, ordem e a home
+# ======================================================================
+
+
+def passo_banners() -> None:
+    from sqlalchemy import delete as sql_delete
+
+    from vip_api.modelos.catalogo import Banner
+
+    painel = Painel()
+    with _sessao_do_banco() as sessao:
+        # A massa de desenvolvimento já tem banners; o passo começa do zero
+        # para as contagens ficarem legíveis.
+        sessao.execute(sql_delete(Banner))
+        sessao.commit()
+
+    criados = []
+    for numero in range(1, 6):
+        corpo, status = painel.post(
+            "/admin/banners",
+            {
+                "imagemUrl": f"https://cdn.test/verificacao{numero}.jpg",
+                "titulo": f"Banner {numero}",
+            },
+        )
+        criados.append(corpo)
+    print(f"  cinco banners criados (inativos): ordens {[b['ordem'] for b in criados]}")
+
+    print("\n  ativando um a um:")
+    for numero, banner in enumerate(criados, start=1):
+        corpo, status = painel.patch(f"/admin/banners/{banner['id']}", {"ativo": True})
+        if status == 200:
+            print(f"    {numero}º  HTTP {status}  ativo={corpo['ativo']}")
+        else:
+            print(f"    {numero}º  HTTP {status}  {json.dumps(corpo, ensure_ascii=False)}")
+
+    invertida = [b["id"] for b in reversed(criados)]
+    reordenados, status = painel.patch("/admin/banners/ordem", {"ids": invertida})
+    print(f"\n  PATCH /admin/banners/ordem invertendo  ->  HTTP {status}")
+    for banner in reordenados:
+        print(f"    ordem={banner['ordem']}  id={banner['id']:<5} {banner['titulo']:<10} ativo={banner['ativo']}")
+
+    restantes, status = painel.delete(f"/admin/banners/{reordenados[1]['id']}")
+    print(f"\n  DELETE do segundo da lista  ->  HTTP {status}")
+    for banner in restantes:
+        print(f"    ordem={banner['ordem']}  id={banner['id']:<5} {banner['titulo']:<10} ativo={banner['ativo']}")
+
+
+# ======================================================================
+# home — o carrossel público depois de tudo
+# ======================================================================
+
+
+def passo_home() -> None:
+    painel = Painel()
+    banners, _ = painel.get("/admin/banners")
+    home, status = painel.get("/home")
+
+    print(f"  GET /home  ->  HTTP {status}\n")
+    print(f"  {'ID':<6} {'ORDEM':<6} {'ATIVO':<6} TÍTULO")
+    print(f"  {'-' * 6} {'-' * 6} {'-' * 6} {'-' * 20}")
+    for banner in banners:
+        print(f"  {banner['id']:<6} {banner['ordem']:<6} {str(banner['ativo']):<6} {banner['titulo']}")
+
+    print(f"\n  banners que a home devolve: {[b['id'] for b in home['banners']]}")
+    esperado = [b["id"] for b in banners if b["ativo"]]
+    print(f"  ativos do painel, na ordem:  {esperado}")
+    print(f"  conferem: {[b['id'] for b in home['banners']] == esperado}")
+
+
 PASSOS = {
     "codigo": passo_codigo,
     "exclusao": passo_exclusao,
@@ -735,6 +947,10 @@ PASSOS = {
     "variacoes": passo_variacoes,
     "status": passo_status,
     "filtro": passo_filtro,
+    "marcas": passo_marcas,
+    "categorias": passo_categorias,
+    "banners": passo_banners,
+    "home": passo_home,
 }
 
 

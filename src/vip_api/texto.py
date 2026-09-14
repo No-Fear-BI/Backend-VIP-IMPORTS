@@ -1,4 +1,4 @@
-"""Normalização de texto para ordenação e busca.
+"""Normalização de texto para ordenação, busca e slug.
 
 Esta é a rotina que preenche `produtos.nome_ordenacao` e `marcas.nome_busca`
 (via listener, ver modelos/catalogo.py) E que normaliza o termo de `?busca=`
@@ -18,3 +18,16 @@ def normalizar(texto: str) -> str:
     decomposto = unicodedata.normalize("NFKD", texto)
     sem_acento = "".join(c for c in decomposto if not unicodedata.combining(c))
     return sem_acento.lower().strip()
+
+
+def gerar_slug(texto: str) -> str:
+    """`"Louis Vuitton"` -> `"louis-vuitton"`.
+
+    Mesma normalização da busca (minúsculas, sem acento) mais a troca do que
+    não é letra nem número por hífen. É a URL pública da marca e da categoria,
+    então sai daqui uma vez, na criação, e não muda sozinha depois — trocar
+    slug quebra link compartilhado e o que o buscador já indexou.
+    """
+    base = normalizar(texto)
+    palavras = "".join(c if c.isalnum() else " " for c in base).split()
+    return "-".join(palavras)
