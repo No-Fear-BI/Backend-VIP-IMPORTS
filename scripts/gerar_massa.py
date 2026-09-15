@@ -1,5 +1,5 @@
 """Gera massa de teste para desenvolvimento: 18 marcas, categorias por
-coleção e 5.000 produtos com imagens e variações.
+coleção e 11.569 produtos com imagens e variações — o tamanho do catálogo real.
 
 Fora do pacote da aplicação de propósito — isto nunca vai para produção.
 
@@ -9,9 +9,15 @@ chave natural e pula o que já existe, então rodar duas vezes não duplica nada
     python scripts/gerar_massa.py            # cria o que faltar
     python scripts/gerar_massa.py --limpar   # apaga a massa antes de recriar
 
-A distribuição imita catálogo real: umas poucas marcas concentram centenas de
-produtos, a maioria tem dezenas. Parte esgotada, parte oculta, parte sem
-imagem nenhuma — testar filtro com 50 registros bem-comportados não prova nada.
+A distribuição é TORTA de propósito, porque distribuição uniforme esconde
+justamente os casos lentos:
+- três marcas com milhares de produtos e várias com dezenas;
+- metade do catálogo em bolsas, e a coleção feminina com o dobro da masculina;
+- nomes que repetem os termos comuns ("bolsa", "preta", "couro"), que é o que
+  faz a busca por substring casar com milhares de linhas;
+- 12% sem imagem, 20% sem descrição, parte esgotada e parte oculta;
+- mais da metade com o MESMO `criado_em`, o instante da carga, como a
+  importação da Fatia 5 vai deixar.
 """
 
 import argparse
@@ -37,30 +43,31 @@ from vip_api.modelos.catalogo import (  # noqa: E402
     ProdutoVariacao,
 )
 
-TOTAL_PRODUTOS = 5_000
+TOTAL_PRODUTOS = 11_569
 SEMENTE = 20260910  # massa reproduzível: mesma semente, mesmo catálogo
 
-# (nome, prefixo do código, peso na distribuição). O peso é o que cria o
-# catálogo desbalanceado de verdade: Chanel com centenas, Goyard com poucas.
+# (nome, prefixo do código, QUANTOS produtos). Contagem exata, não peso: três
+# marcas com milhares, uma faixa do meio com centenas e a cauda com dezenas.
+# A soma tem que dar TOTAL_PRODUTOS, e _gerar_produtos confere.
 MARCAS = [
-    ("Chanel", "CHN", 40),
-    ("Louis Vuitton", "LVT", 38),
-    ("Gucci", "GUC", 32),
-    ("Prada", "PRD", 28),
-    ("Hermès", "HRM", 10),
-    ("Dior", "DIO", 24),
-    ("Balenciaga", "BLC", 18),
-    ("Saint Laurent", "SLT", 16),
-    ("Bottega Veneta", "BTV", 12),
-    ("Versace", "VRS", 14),
-    ("Fendi", "FND", 12),
-    ("Burberry", "BBR", 10),
-    ("Valentino", "VLT", 8),
-    ("Givenchy", "GVC", 7),
-    ("Céline", "CLN", 6),
-    ("Loewe", "LOE", 4),
-    ("Goyard", "GOY", 3),
-    ("Off-White", "OFW", 5),
+    ("Chanel", "CHN", 3_400),
+    ("Louis Vuitton", "LVT", 2_800),
+    ("Gucci", "GUC", 1_945),
+    ("Prada", "PRD", 900),
+    ("Dior", "DIO", 650),
+    ("Balenciaga", "BLC", 480),
+    ("Saint Laurent", "SLT", 360),
+    ("Versace", "VRS", 240),
+    ("Fendi", "FND", 180),
+    ("Bottega Veneta", "BTV", 150),
+    ("Burberry", "BBR", 120),
+    ("Hermès", "HRM", 90),
+    ("Valentino", "VLT", 70),
+    ("Givenchy", "GVC", 60),
+    ("Céline", "CLN", 45),
+    ("Off-White", "OFW", 35),
+    ("Loewe", "LOE", 25),
+    ("Goyard", "GOY", 19),
 ]
 
 CATEGORIAS = {
@@ -82,6 +89,14 @@ CATEGORIAS = {
     ],
 }
 
+# Peso de cada coleção e de cada categoria (pelo slug). Bolsa é metade do
+# catálogo de uma loja de grife, e é o filtro que mais vai pesar.
+PESO_COLECAO = {"feminino": 2, "masculino": 1}
+PESO_CATEGORIA = {
+    "bolsas": 50, "sapatos": 14, "acessorios": 14, "oculos": 6,
+    "vestidos": 8, "blusas": 8, "camisas": 8, "casacos": 8,
+}
+
 MODELOS = [
     "Clássica", "Acolchoada", "Monograma", "Matelassê", "Slim", "Oversized",
     "Vintage", "Couro Legítimo", "Camurça", "Bordada", "Tweed", "Canvas",
@@ -91,6 +106,10 @@ CORES = [
     "Preta", "Bege", "Caramelo", "Off-White", "Vermelha", "Azul Marinho",
     "Verde Oliva", "Rosé", "Cinza", "Dourada", "Prata", "Marrom",
 ]
+# Preta em mais de um terço dos nomes: é a cor que o catálogo real repete.
+PESO_COR = [36, 10, 8, 6, 6, 5, 4, 4, 6, 5, 4, 6]
+# Termos que voltam de novo e de novo em nome de produto de grife.
+TERMOS_COMUNS = ["Couro", "Clássica", "Matelassê", "Monograma", "Pequena", "Média", "Grande"]
 TAMANHOS = ["PP", "P", "M", "G", "GG", "36", "37", "38", "39", "40", "42", "44"]
 
 
@@ -116,7 +135,7 @@ def _limpar(sessao: Session) -> None:
 def _garantir_marcas(sessao: Session) -> dict[str, Marca]:
     existentes = {m.slug: m for m in sessao.scalars(select(Marca))}
     criadas = 0
-    for nome, _prefixo, _peso in MARCAS:
+    for nome, _prefixo, _quantidade in MARCAS:
         slug = _slug(nome)
         if slug in existentes:
             continue
@@ -162,16 +181,18 @@ def _garantir_categorias(sessao: Session) -> dict[tuple[int, str], Categoria]:
 
 
 def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
+    assert sum(quantidade for *_, quantidade in MARCAS) == TOTAL_PRODUTOS
     aleatorio = random.Random(SEMENTE)
     codigos_existentes = set(sessao.scalars(select(Produto.codigo)))
 
-    marcas_por_slug = {_slug(nome): (nome, prefixo, peso) for nome, prefixo, peso in MARCAS}
-    pesos = [marcas_por_slug[_slug(nome)][2] for nome, _p, _peso in MARCAS]
-    slugs_marca = [_slug(nome) for nome, _p, _peso in MARCAS]
+    marcas_por_slug = {_slug(nome): (nome, prefixo, quantidade) for nome, prefixo, quantidade in MARCAS}
 
+    slug_da_colecao = {c.id: c.slug for c in sessao.scalars(select(Colecao))}
     categorias_por_colecao: dict[int, list[Categoria]] = {}
     for (colecao_id, _slug_cat), categoria in categorias.items():
         categorias_por_colecao.setdefault(colecao_id, []).append(categoria)
+    ids_colecao = sorted(categorias_por_colecao)
+    pesos_colecao = [PESO_COLECAO.get(slug_da_colecao[i], 1) for i in ids_colecao]
 
     sequencia_por_marca: dict[str, int] = {}
     for codigo in codigos_existentes:
@@ -181,17 +202,30 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
                 sequencia_por_marca.get(prefixo, 0), int(numero)
             )
 
+    # Uma entrada por produto que falta, já na quantidade exata de cada marca,
+    # e embaralhada: a ordem de inserção não pode agrupar a marca inteira.
+    fila: list[str] = []
+    for slug_marca, (_nome, prefixo, quantidade) in marcas_por_slug.items():
+        fila.extend([slug_marca] * max(0, quantidade - sequencia_por_marca.get(prefixo, 0)))
+    aleatorio.shuffle(fila)
+
     agora = datetime.now(timezone.utc)
+    # O instante da carga: a importação grava milhares de linhas com o mesmo
+    # criado_em, e é o caso em que a paginação só se sustenta pelo desempate
+    # por id.
+    instante_da_carga = agora - timedelta(days=3)
     criados = 0
     lote: list[Produto] = []
 
-    for _ in range(TOTAL_PRODUTOS - len(codigos_existentes)):
-        slug_marca = aleatorio.choices(slugs_marca, weights=pesos, k=1)[0]
-        nome_marca, prefixo, _peso = marcas_por_slug[slug_marca]
+    for slug_marca in fila:
+        nome_marca, prefixo, _quantidade = marcas_por_slug[slug_marca]
         marca = marcas[slug_marca]
 
-        colecao_id = aleatorio.choice(list(categorias_por_colecao.keys()))
-        categoria = aleatorio.choice(categorias_por_colecao[colecao_id])
+        colecao_id = aleatorio.choices(ids_colecao, weights=pesos_colecao, k=1)[0]
+        opcoes = categorias_por_colecao[colecao_id]
+        categoria = aleatorio.choices(
+            opcoes, weights=[PESO_CATEGORIA.get(c.slug, 5) for c in opcoes], k=1
+        )[0]
 
         sequencia_por_marca[prefixo] = sequencia_por_marca.get(prefixo, 0) + 1
         codigo = f"{prefixo}-{sequencia_por_marca[prefixo]:04d}"
@@ -199,10 +233,19 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
             continue
         codigos_existentes.add(codigo)
 
-        nome = (
-            f"{categoria.nome.rstrip('s')} {aleatorio.choice(MODELOS)} "
-            f"{aleatorio.choice(CORES)} {nome_marca}"
-        )
+        tipo = categoria.nome.rstrip("s")
+        cor = aleatorio.choices(CORES, weights=PESO_COR, k=1)[0]
+        modelo = aleatorio.choice(MODELOS)
+        termo = aleatorio.choice(TERMOS_COMUNS)
+        # Três formatos, para "bolsa preta" sair colado em parte dos nomes e
+        # separado em outra — é assim que o cadastro real fica.
+        formato = aleatorio.random()
+        if formato < 0.4:
+            nome = f"{tipo} {cor} {termo} {nome_marca}"
+        elif formato < 0.8:
+            nome = f"{tipo} {modelo} {cor} {nome_marca}"
+        else:
+            nome = f"{tipo} {termo} {modelo} {cor} {nome_marca}"
 
         sorteio = aleatorio.random()
         if sorteio < 0.08:
@@ -212,23 +255,28 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
         else:
             status = "normal"
 
-        # criado_em espalhado por 2 anos, mas com blocos no mesmo instante:
-        # é assim que a carga real vai ficar, e é exatamente o caso que quebra
-        # paginação sem desempate por id.
-        recuo = timedelta(days=aleatorio.randint(0, 730))
-        if aleatorio.random() < 0.4:
-            recuo = timedelta(days=aleatorio.randint(0, 24) * 30)
+        if aleatorio.random() < 0.55:
+            criado_em = instante_da_carga
+        elif aleatorio.random() < 0.4:
+            criado_em = agora - timedelta(days=aleatorio.randint(0, 24) * 30)
+        else:
+            criado_em = agora - timedelta(days=aleatorio.randint(0, 730))
 
         produto = Produto(
             codigo=codigo,
             nome=nome,
-            descricao=f"{nome}. Peça importada, disponível para atendimento.",
+            # 20% sem descrição: a extração nem sempre traz texto.
+            descricao=(
+                None
+                if aleatorio.random() < 0.20
+                else f"{nome}. Peça importada, disponível para atendimento."
+            ),
             status=status,
             destaque=aleatorio.random() < 0.02,
             marca_id=marca.id,
             categoria_id=categoria.id,
             colecao_id=colecao_id,
-            criado_em=agora - recuo,
+            criado_em=criado_em,
         )
         if produto.destaque:
             produto.destaque_ordem = aleatorio.randint(1, 40)
@@ -255,9 +303,9 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
                     )
                 )
         if aleatorio.random() < 0.4:
-            for cor in aleatorio.sample(CORES, aleatorio.randint(1, 3)):
+            for cor_variacao in aleatorio.sample(CORES, aleatorio.randint(1, 3)):
                 produto.variacoes.append(
-                    ProdutoVariacao(tipo="cor", valor=cor, disponivel=True)
+                    ProdutoVariacao(tipo="cor", valor=cor_variacao, disponivel=True)
                 )
 
         lote.append(produto)
@@ -335,6 +383,42 @@ def _marcar_categorias_destaque(sessao: Session) -> None:
     print(f"categorias em destaque: {len(escolhidas)} marcadas")
 
 
+def _resumo(sessao: Session) -> None:
+    total = sessao.scalar(select(func.count()).select_from(Produto))
+    visiveis = sessao.scalar(
+        select(func.count()).select_from(Produto).where(Produto.status != "oculto")
+    )
+    sem_imagem = sessao.scalar(
+        select(func.count()).select_from(Produto).where(~Produto.imagens.any())
+    )
+    sem_descricao = sessao.scalar(
+        select(func.count()).select_from(Produto).where(Produto.descricao.is_(None))
+    )
+    mesmo_instante = sessao.scalar(
+        select(func.count())
+        .select_from(Produto)
+        .group_by(Produto.criado_em)
+        .order_by(func.count().desc())
+        .limit(1)
+    )
+    print(
+        f"\ntotal no banco: {total} produtos ({visiveis} visíveis, {sem_imagem} sem imagem, "
+        f"{sem_descricao} sem descrição, {mesmo_instante} no mesmo criado_em)"
+    )
+    for rotulo, termo in (("'bolsa'", "%bolsa%"), ("'preta'", "%preta%"), ("'bolsa preta'", "%bolsa preta%")):
+        casam = sessao.scalar(
+            select(func.count()).select_from(Produto).where(Produto.nome_ordenacao.like(termo))
+        )
+        print(f"  nomes com {rotulo}: {casam}")
+    for nome, quantidade in sessao.execute(
+        select(Marca.nome, func.count(Produto.id))
+        .join(Produto, Produto.marca_id == Marca.id)
+        .group_by(Marca.nome)
+        .order_by(func.count(Produto.id).desc())
+    ):
+        print(f"  {nome:<16} {quantidade:>5}")
+
+
 def main() -> None:
     analisador = argparse.ArgumentParser(description=__doc__)
     analisador.add_argument(
@@ -353,22 +437,12 @@ def main() -> None:
         _gerar_produtos(sessao, marcas, categorias)
         _garantir_banners(sessao)
         _marcar_categorias_destaque(sessao)
-
-        total = sessao.scalar(select(func.count()).select_from(Produto))
-        visiveis = sessao.scalar(
-            select(func.count()).select_from(Produto).where(Produto.status != "oculto")
-        )
-        sem_imagem = sessao.scalar(
-            select(func.count())
-            .select_from(Produto)
-            .where(~Produto.imagens.any())
-        )
-        print(f"\ntotal no banco: {total} produtos ({visiveis} visíveis, {sem_imagem} sem imagem)")
+        _resumo(sessao)
 
     # ANALYZE: sem estatísticas atualizadas o planejador escolhe plano ruim e
-    # o EXPLAIN da verificação mede a coisa errada.
+    # a medição mede a coisa errada.
     with engine.connect() as conexao:
-        conexao.exec_driver_sql("ANALYZE produtos, marcas, categorias, produto_imagens")
+        conexao.exec_driver_sql("ANALYZE produtos, marcas, categorias, produto_imagens, produto_variacoes")
     print("ANALYZE concluído")
 
 

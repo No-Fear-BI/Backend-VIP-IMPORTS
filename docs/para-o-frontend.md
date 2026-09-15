@@ -36,7 +36,7 @@ Formato de resposta, envelope de erro (`erro.codigo`/`erro.mensagem`/`erro.campo
 
   Se a troca cair em cima de um item que já existe (mesmo produto, mesmo par), os dois viram um: o item alterado some e fica o que já estava lá. O `itemId` que some é o do PATCH — recarregue a lista com o `GET /carrinho` da resposta seguinte em vez de guardar o id.
 
-  `POST /carrinho/migrar` — **formato novo, não estava no contrato v1.0.** É como o carrinho do `localStorage` (visitante não identificado) entra na conta logo após a identificação:
+  `POST /carrinho/migrar` — **a rota está no contrato v1.0** (seção 03, `migrarCarrinhoAnonimo`); o que não estava definido era o FORMATO DO CORPO da requisição. É como o carrinho do `localStorage` (visitante não identificado) entra na conta logo após a identificação:
 
   ```json
   {

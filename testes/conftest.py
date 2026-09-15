@@ -45,9 +45,12 @@ def _url_de_desenvolvimento() -> str:
         return url
     # Mesmo .env que a aplicação lê. Sem depender do pydantic-settings aqui,
     # que só pode ser importado depois da URL trocada.
-    for linha in open(".env", encoding="utf-8"):
-        if linha.startswith("DATABASE_URL="):
-            return linha.split("=", 1)[1].strip()
+    # `with`: o arquivo aberto e esquecido vira ResourceWarning, e aviso aqui
+    # é erro (filterwarnings do pyproject.toml).
+    with open(".env", encoding="utf-8") as arquivo:
+        for linha in arquivo:
+            if linha.startswith("DATABASE_URL="):
+                return linha.split("=", 1)[1].strip()
     raise RuntimeError("DATABASE_URL não está no ambiente nem no .env.")
 
 

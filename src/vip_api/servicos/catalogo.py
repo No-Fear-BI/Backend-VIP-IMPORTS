@@ -12,7 +12,13 @@ from vip_api.erros.codigos import (
     PRODUTO_NAO_ENCONTRADO,
 )
 from vip_api.erros.excecoes import AppError
-from vip_api.esquemas.base import Pagina, Paginacao, codificar_cursor, decodificar_cursor
+from vip_api.esquemas.base import (
+    Pagina,
+    Paginacao,
+    codificar_cursor,
+    decodificar_cursor,
+    exigir_formato_do_cursor,
+)
 from vip_api.esquemas.produto import (
     Capa,
     ImagemDetalhe,
@@ -65,8 +71,10 @@ def _ler_cursor(filtros: FiltrosProduto) -> dict | None:
     if not filtros.cursor:
         return None
 
-    dados = decodificar_cursor(filtros.cursor)
-    if not isinstance(dados, dict) or {"o", "v", "id"} - dados.keys():
+    dados = exigir_formato_do_cursor(
+        decodificar_cursor(filtros.cursor), texto=("o", "v"), inteiros=("id", "t")
+    )
+    if {"o", "v", "id"} - dados.keys():
         raise AppError(
             codigo=CURSOR_INVALIDO,
             mensagem="O cursor de paginação informado é inválido.",

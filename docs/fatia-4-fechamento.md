@@ -1,10 +1,12 @@
 # Fatia 4: fechamento do painel
 
-Estado em 15/09/2026, branch `feat/painel-fechamento`. O painel implementa todas as rotas do contrato, conforme a reconstrução usada na auditoria. Nada ficou pela metade no código. O que falta depende de documento ou de decisão de outra pessoa (ver "Pendências").
+Estado em 15/09/2026, branch `feat/painel-fechamento`. O painel implementa todas as rotas do contrato v1.0 (`docs/contrato-api-v1.json`, extraído do documento). Nada ficou pela metade no código. O que falta depende de decisão de outra pessoa (ver "Pendências").
+
+> **Atualização de 15/09/2026:** esta seção foi escrita contra uma reconstrução do contrato, feita sem o documento em mãos. O documento (`docs/contrato-api-v1.pdf`) apareceu depois, e os números abaixo já refletem a auditoria conclusiva contra ele — ver `docs/tarefas-77-79.md` para o antes e o depois.
 
 ## Rotas
 
-- **55 rotas** na API, contando catálogo, cliente e painel: 51 do contrato e 4 fora dele.
+- **55 rotas** na API, contando catálogo, cliente e painel: 52 do contrato e 3 fora dele.
 - **33 rotas no painel** (`/api/v1/admin/...`): 31 do contrato, mais `GET /admin/eu` e `PATCH /admin/banners/ordem`.
 - 31 dessas 33 exigem sessão de admin. As 2 exceções declaradas são login e logout (`POST` e `DELETE /admin/sessao`). A varredura de `testes/teste_protecao_admin.py` lê as rotas do próprio roteador, então rota nova já nasce coberta.
 
@@ -23,17 +25,16 @@ Estado em 15/09/2026, branch `feat/painel-fechamento`. O painel implementa todas
 
 ## Auditoria do contrato
 
-Saída de `scripts/auditoria_contrato.py`. Atenção: **o contrato v1.0 não está no repositório**. A auditoria compara a API com uma reconstrução feita a partir do que os docs e o código citam.
+Saída de `scripts/auditoria_contrato.py`, agora contra o documento real (`docs/contrato-api-v1.json`, origem `documento`) — **conclusiva, código de saída 0**.
 
-- **Do contrato:** as 51 rotas a implementar estão implementadas e nenhuma falta.
-- **Seção 05 (acesso):** 5 rotas não existem, e é o certo. A seção foi congelada por decisão do cliente, e a auditoria confere que nenhuma rota do tema existe.
-- **Além do contrato:** 4 rotas.
+- **Do contrato:** as 52 rotas a implementar estão implementadas e nenhuma falta. `POST /carrinho/migrar` está entre elas (seção 03): a rota sempre esteve no contrato, só o formato do corpo da requisição não estava definido — engano da reconstrução anterior, corrigido.
+- **Seção 05 (acesso):** 6 rotas não existem, e é o certo — `GET /acesso/estado`, `POST /acesso/senha`, `POST /acesso/solicitar`, `GET /admin/acesso/fila`, `PATCH /admin/acesso/{clienteId}` e `PATCH /admin/configuracao/acesso`. A seção foi congelada por decisão do cliente, e a auditoria confere que nenhuma rota do tema existe, em nenhum caminho.
+- **Além do contrato:** 3 rotas.
   - `GET /admin/eu` (tarefa 53): o painel usa para saber se a sessão vale.
   - `PATCH /admin/banners/ordem` (tarefa 57): a ordem contígua dos banners precisa de rota própria.
-  - `POST /carrinho/migrar` (tarefa 50): leva o carrinho anônimo para a conta.
   - `GET /health`: healthcheck do Docker, não é rota de produto.
-  - As três primeiras estão em `para-o-frontend.md`.
-- **Incerteza:** 5 rotas da reconstrução não têm evidência escrita (`GET` e `PATCH` de marcas e de categorias, e `GET /admin/banners`). A reconstrução chega a 51 rotas e o contrato fala em 52 endpoints. Só dá para fechar essa conta com o documento em mãos.
+  - As duas primeiras estão em `para-o-frontend.md`.
+- **Nomes de handler:** o contrato foi escrito para Node (`listarProdutosAdmin`) e o backend é Python, com nome curto dentro do módulo (`listar`). As 52 rotas do contrato divergem no nome — a auditoria mostra os dois lado a lado, mas trata isso como informação, não como falha.
 
 ## Medição na massa grande
 
@@ -66,8 +67,8 @@ A contagem de cada rota foi a mesma nas 20 requisições e não acompanha o volu
 
 Detalhe, motivo e quem decide estão em `docs/pendencias.md`.
 
-1. O contrato v1.0 não está versionado no repositório. É daí que vem a incerteza da auditoria.
-2. Três rotas de produto fora do contrato esperam uma revisão v1.1.
+1. ~~O contrato v1.0 não está versionado no repositório.~~ Resolvida em 15/09/2026: o documento apareceu e o arquivo foi substituído por uma extração dele.
+2. Duas rotas de produto fora do contrato (`GET /admin/eu`, `PATCH /admin/banners/ordem`) esperam uma revisão v1.1; `GET /health` é infraestrutura.
 3. A seção 05 segue congelada, e a decisão é do cliente.
 4. A abertura do `README.md` ainda descreve a Fatia 0.
 5. A suíte emite cerca de 230 avisos de dependência (pydantic 2.13 com FastAPI 0.115).

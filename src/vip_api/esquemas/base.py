@@ -88,8 +88,32 @@ def decodificar_cursor(cursor: str) -> dict:
         bruto = base64.urlsafe_b64decode(cursor + preenchimento)
         return json.loads(bruto)
     except (ValueError, binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AppError(
-            codigo=CURSOR_INVALIDO,
-            mensagem="O cursor de paginação informado é inválido.",
-            status_code=400,
-        ) from exc
+        raise _cursor_invalido() from exc
+
+
+def exigir_formato_do_cursor(dados: object, texto: tuple[str, ...], inteiros: tuple[str, ...]) -> dict:
+    """Confere o TIPO de cada chave do cursor já decodificado.
+
+    Base64 e JSON válidos não bastam: um cursor adulterado com `"id": "abc"`
+    passava pela decodificação e estourava no `int()` do serviço como erro 500.
+    Chave de `inteiros` ausente é aceita (o total, `t`, é opcional); a
+    obrigatoriedade continua com quem chama.
+    """
+    if not isinstance(dados, dict):
+        raise _cursor_invalido()
+    for chave in texto:
+        if chave in dados and not isinstance(dados[chave], str):
+            raise _cursor_invalido()
+    for chave in inteiros:
+        # bool é subclasse de int no Python: `"id": true` não é id.
+        if chave in dados and (not isinstance(dados[chave], int) or isinstance(dados[chave], bool)):
+            raise _cursor_invalido()
+    return dados
+
+
+def _cursor_invalido() -> AppError:
+    return AppError(
+        codigo=CURSOR_INVALIDO,
+        mensagem="O cursor de paginação informado é inválido.",
+        status_code=400,
+    )

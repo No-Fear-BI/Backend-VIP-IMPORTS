@@ -13,6 +13,9 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY alembic.ini ./
 COPY migracoes ./migracoes
+# Os comandos de operação rodam DENTRO do container no servidor: criar e trocar
+# senha de admin, limpar sessões, medir desempenho depois da carga.
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir -e .
 

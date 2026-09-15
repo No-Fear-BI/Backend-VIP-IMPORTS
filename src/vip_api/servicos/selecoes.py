@@ -13,7 +13,13 @@ from sqlalchemy.orm import Session, aliased
 from vip_api.configuracao import configuracao
 from vip_api.erros.codigos import CARRINHO_VAZIO, CURSOR_INVALIDO
 from vip_api.erros.excecoes import AppError
-from vip_api.esquemas.base import Pagina, Paginacao, codificar_cursor, decodificar_cursor
+from vip_api.esquemas.base import (
+    Pagina,
+    Paginacao,
+    codificar_cursor,
+    decodificar_cursor,
+    exigir_formato_do_cursor,
+)
 from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoResumo, SelecaoSaida
 from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente
@@ -168,8 +174,10 @@ def listar_selecoes(
 
     dados_cursor = None
     if cursor:
-        dados_cursor = decodificar_cursor(cursor)
-        if not isinstance(dados_cursor, dict) or {"v", "id"} - dados_cursor.keys():
+        dados_cursor = exigir_formato_do_cursor(
+            decodificar_cursor(cursor), texto=("v",), inteiros=("id", "t")
+        )
+        if {"v", "id"} - dados_cursor.keys():
             raise AppError(
                 codigo=CURSOR_INVALIDO,
                 mensagem="O cursor de paginação informado é inválido.",

@@ -37,6 +37,23 @@ testpaths = ["testes"]
 python_files = ["teste_*.py"]
 python_functions = ["teste_*"]
 addopts = "-ra --strict-markers"
+# Aviso novo é ERRO. Com 230 avisos conhecidos na tela, o aviso 231 — o que
+# importa — passava despercebido. Os conhecidos ficam listados um a um, por
+# categoria e começo da mensagem, com o motivo; na lista do pytest vale a
+# ÚLTIMA regra que casar, por isso o "error" vem primeiro.
+filterwarnings = [
+    "error",
+    # FastAPI 0.115 recria os campos dos corpos de requisição copiando o
+    # `Field()`, e o pydantic >= 2.12 avisa que o alias gerado (camelCase, de
+    # esquemas/base.py) não tem efeito nessa cópia. Tem: os testes provam que
+    # os campos em camelCase entram. Some ao subir o FastAPI (pendências).
+    "ignore:The 'alias' attribute with value:pydantic.warnings.UnsupportedFieldAttributeWarning",
+    "ignore:The 'validation_alias' attribute with value:pydantic.warnings.UnsupportedFieldAttributeWarning",
+    "ignore:The 'serialization_alias' attribute with value:pydantic.warnings.UnsupportedFieldAttributeWarning",
+    # O TestClient do Starlette desta versão ainda usa o nome antigo do
+    # BlockingPortal do anyio. Só aparece nos testes, nunca na aplicação.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
 
 [build-system]
 requires = ["hatchling"]
