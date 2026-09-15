@@ -17,6 +17,8 @@ Formato de resposta, envelope de erro (`erro.codigo`/`erro.mensagem`/`erro.campo
 - **O identificador de rastreio do erro 500 vai no cabeçalho `X-Rastreio`, não em `erro.campos`.** `campos` é só de validação — cada chave dele é renderizada como erro embaixo de um input, e "rastreio" viraria um erro de campo que não existe na tela. Ao reportar um 500, mande o valor de `X-Rastreio`: ele acha a exceção no log.
 - **`GET /produtos/:codigo` não devolve `capa`.** É redundante com `imagens`, que vem completo e ordenado no detalhe. `destaque` continua presente, como a interface `Produto` da seção 07 declara.
 - **`POST /clientes/identificar` responde sempre 200**, inclusive quando a conta é criada naquele momento. A rota existe para abrir sessão, não para criar registro — não ramifique por status: conta nova e conta existente levam à mesma tela.
+- **Criação devolve 201; o resto devolve 200. Nenhuma rota devolve 204.**
+  Respondem **201** com o recurso criado: `POST /selecoes`, `POST /admin/produtos`, `POST /admin/produtos/:id/duplicar`, `POST /admin/produtos/:id/imagens`, `POST /admin/marcas`, `POST /admin/categorias` e `POST /admin/banners`. Todo o resto — inclusive `POST /clientes/identificar`, `POST /favoritos`, `POST /carrinho`, `POST /carrinho/migrar` e `POST /admin/sessao` — responde **200**: são rotas que abrem sessão ou registram uma ação, não que criam um recurso novo para a tela navegar até ele.
 - **Nenhuma rota devolve 204.** `POST /clientes/sair`, `POST /favoritos` e `DELETE /favoritos/:produtoId` respondem **200 com `{"ok": true}`**, seguindo a tabela da seção 1.4 do contrato, que lista 200 para atualização e exclusão bem-sucedidas. Assim `api/cliente.ts` pode desempacotar JSON em toda resposta de sucesso, sem tratar o caso sem corpo. `POST /favoritos` também não devolve 201: favoritar duas vezes não cria nada, e a resposta é a mesma nos dois casos.
 - **O item do carrinho tem DUAS variações: `variacaoTamanhoId` e `variacaoCorId`.** Não existe mais `variacaoId`. A página do produto tem seletor de tamanho **e** de cor, e os dois entram no mesmo item — é o que faz a seleção sair como "(Chanel, M / Preto)". Cada um é opcional: produto só com tamanho, só com cor ou sem variação nenhuma manda só o que tiver. O banco recusa tamanho no campo de cor e vice-versa, então não inverta os dois campos.
 
@@ -132,6 +134,8 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
 
   Só os tipos `tamanho` e `cor`. Valor repetido **dentro do mesmo tipo** é 400 (o mesmo valor em tipos diferentes é aceito: tamanho "Único" e cor "Único" são coisas distintas). `disponivel` é opcional e vale `true`.
 
+  **Mande SEMPRE a grade inteira, carregada do produto.** Se a tela mandar só o tamanho que acabou de ser criado, todos os outros tamanhos e cores do produto somem — e junto com eles a escolha de quem já tinha aquela variação no carrinho, que fica com o campo vazio. Não existe "acrescentar uma variação": existe salvar a grade.
+
   **O que permanece mantém o `id`**: uma variação com o mesmo tipo e o mesmo valor não é recriada, é reaproveitada — é isso que preserva a escolha de quem já tinha aquele tamanho no carrinho. Mande sempre a grade completa, inclusive o que não mudou.
 
   Quando uma variação sai, os itens de carrinho que a usavam perdem aquela escolha; se o cliente ficar com dois itens iguais do mesmo produto, eles viram um só. Nada disso devolve erro — é a API acertando o carrinho, e a tela do cliente vê o resultado no próximo `GET /carrinho`.
@@ -157,6 +161,8 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
 ## Painel administrativo — destaques e consultas (tarefas 58 e 60)
 
 - **`PATCH /api/v1/admin/destaques/produtos`** e **`PATCH /api/v1/admin/destaques/categorias`** — recebem a lista COMPLETA de ids na ordem em que devem aparecer na home: `{ "ids": [812, 44, 930] }`. **Substituem o conjunto**: quem está na lista vira destaque com a ordem da posição, quem não está deixa de ser. Lista vazia tira todos. Respondem com os ids na ordem gravada.
+
+  **Mande SEMPRE a lista inteira, carregada da tela.** Estas rotas substituem o conjunto: se a tela mandar um id só, a home do cliente esvazia — os outros onze destaques somem na mesma chamada, sem erro nenhum, porque "não veio na lista" é exatamente como se tira do destaque. O fluxo certo é ler a ordem atual, mexer nela e devolver inteira.
 
   **Produto `oculto` é recusado com 400**, e os ids problemáticos vêm em `erro.detalhes.ocultos` — marque-os na tela em vez de mostrar um erro genérico: o produto oculto some da home inteira, então aceitar a marcação seria deixar o cliente marcar e não ver nada. Categoria inativa é recusada pelo mesmo motivo, com `erro.detalhes.inativas`.
 
