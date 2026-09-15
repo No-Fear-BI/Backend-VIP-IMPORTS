@@ -2,7 +2,3 @@
 __pycache__/
 *.pyc
 .env
-
-# cookies de teste gerados pelos scripts de verificacao
-*.txt
-!requirements*.txt

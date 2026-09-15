@@ -1,7 +1,7 @@
 """As três regras de colisão do `POST /carrinho/migrar`.
 
-Versão de teste do passo `migracao` de scripts/verificar_fatia3.py. O que está
-em jogo é a venda: se o carrinho montado como visitante esvaziar na hora da
+Herdado do passo `migracao` do antigo roteiro de verificação da Fatia 3. O que
+está em jogo é a venda: se o carrinho montado como visitante esvaziar na hora da
 identificação, a pessoa desiste. Por isso item que não dá para migrar volta em
 `ignorados`, e não some em silêncio.
 

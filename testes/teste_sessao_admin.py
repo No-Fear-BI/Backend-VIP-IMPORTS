@@ -20,6 +20,9 @@ def teste_login_com_senha_certa_abre_sessao(sem_sessao, administrador):
     bruto = resposta.headers["set-cookie"].lower()
     assert "httponly" in bruto
     assert "samesite=lax" in bruto
+    assert "path=/" in bruto
+    # 12 horas, o mesmo prazo gravado em admin_sessoes.expira_em.
+    assert "max-age=43200" in bruto
     # `secure` só em produção: fixo, o desenvolvimento local em HTTP pararia
     # de receber o cookie.
     assert "secure" not in bruto
@@ -47,6 +50,57 @@ def teste_email_inexistente_responde_igual_a_senha_errada(sem_sessao, administra
 
     assert inexistente.status_code == senha_errada.status_code == 401
     assert inexistente.json() == senha_errada.json()
+
+
+def teste_conta_inativa_responde_igual_e_o_argon2_roda_nos_tres_casos(
+    sem_sessao, sessao, administrador, monkeypatch
+):
+    """Os três fracassos são indistinguíveis também no TEMPO.
+
+    Cronometrar não serve de teste — o ruído da máquina é maior que qualquer
+    limiar honesto. O que dá para provar é a causa: nos três casos a senha
+    passa por uma verificação argon2, real ou contra o hash descartável.
+    """
+    from vip_api.modelos.admin import Administrador
+    from vip_api.seguranca import senhas
+    from vip_api.servicos import admin
+
+    sessao.add(
+        Administrador(
+            nome="Desligado",
+            email="desligado@teste.local",
+            senha_hash=administrador.senha_hash,
+            ativo=False,
+        )
+    )
+    sessao.commit()
+
+    verificacoes = []
+    original = senhas.conferir_senha
+
+    def contar(senha, hash_guardado):
+        verificacoes.append(hash_guardado)
+        return original(senha, hash_guardado)
+
+    # Os dois nomes: o serviço importou a função, e o gasto de tempo chama a
+    # do próprio módulo.
+    monkeypatch.setattr(senhas, "conferir_senha", contar)
+    monkeypatch.setattr(admin, "conferir_senha", contar)
+
+    casos = [
+        ("ninguem@teste.local", "qualquer-senha-1"),
+        (EMAIL_ADMIN, "senha-errada-1"),
+        ("desligado@teste.local", SENHA_ADMIN),
+    ]
+    respostas = []
+    for email, senha in casos:
+        antes = len(verificacoes)
+        resposta = sem_sessao.post("/api/v1/admin/sessao", json={"email": email, "senha": senha})
+        respostas.append((resposta.status_code, resposta.json()))
+        assert len(verificacoes) == antes + 1, f"sem argon2 para {email}"
+
+    assert respostas[0] == respostas[1] == respostas[2]
+    assert respostas[0][0] == 401
 
 
 def teste_eu_sem_sessao_responde_401(sem_sessao):

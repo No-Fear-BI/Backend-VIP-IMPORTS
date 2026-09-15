@@ -25,6 +25,4 @@ transação revertida no fim, então nada fica para trás entre um teste e outro
 `pytest -s` mostra a tabela da varredura de proteção do painel (rota, método e
 os códigos sem cookie, com cookie de cliente e com cookie de admin).
 
-Os scripts de `scripts/` continuam existindo para rodar à mão contra a massa
-grande do banco de desenvolvimento; os testes são a versão rápida, que roda a
-cada alteração.
+Critério de `scripts/`: fica só o que roda à mão contra a massa grande do banco de desenvolvimento ou opera o ambiente (massa, travessia, contagem de consultas, EXPLAIN, auditoria do contrato, comandos de admin); roteiro de verificação que virou teste sai.

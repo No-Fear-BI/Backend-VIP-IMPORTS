@@ -1,6 +1,6 @@
 """A seleção enviada é dado CONGELADO.
 
-Versão de teste do passo `congelamento` de scripts/verificar_fatia3.py. O
+Herdado do passo `congelamento` do antigo roteiro de verificação da Fatia 3. O
 painel de atendimento precisa mostrar o que o cliente VIU, não o que o produto
 é hoje: se a atendente abre uma seleção de três semanas atrás e cita um nome
 que mudou nesse meio-tempo, a conversa descarrila.
