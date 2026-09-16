@@ -18,6 +18,22 @@ justamente os casos lentos:
 - 12% sem imagem, 20% sem descrição, parte esgotada e parte oculta;
 - mais da metade com o MESMO `criado_em`, o instante da carga, como a
   importação da Fatia 5 vai deixar.
+
+Todo produto sai daqui com `origem_url = 'gerar_massa'` — é o CARIMBO da
+massa sintética, para limpar só ela um dia sem tocar em produto real
+(`scripts/importar_catalogo.py`, que sempre preenche `codigo_origem`) nem em
+produto criado pelo painel (que não preenche nem `codigo_origem` nem
+`origem_url` — é por isso que o carimbo tem que ser explícito, e não a
+ausência de alguma coisa: `codigo_origem IS NULL` sozinho só identifica a
+massa sintética ENQUANTO o painel não tiver tela de criar produto; no dia em
+que tiver, deixa de distinguir os dois para sempre).
+
+    -- Limpa só a massa sintética, continua correto depois que o painel
+    -- criar produto de verdade:
+    DELETE FROM produtos WHERE origem_url = 'gerar_massa';
+
+    -- NUNCA: WHERE codigo_origem IS NULL — depois que existir produto do
+    -- painel, isso apaga produto do painel junto.
 """
 
 import argparse
@@ -28,7 +44,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from sqlalchemy import delete, func, select  # noqa: E402
+from sqlalchemy import delete, func, select, update  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from vip_api.banco import SessaoLocal, engine  # noqa: E402
@@ -42,6 +58,9 @@ from vip_api.modelos.catalogo import (  # noqa: E402
     ProdutoImagem,
     ProdutoVariacao,
 )
+# Mesmo teto que PATCH /admin/destaques/produtos aceita (servicos/admin_destaques.py)
+# e que a home renderiza — marcar mais do que isso é um estado que a API nunca produz.
+from vip_api.servicos.home import LIMITE_DESTAQUES  # noqa: E402
 
 TOTAL_PRODUTOS = 11_569
 SEMENTE = 20260910  # massa reproduzível: mesma semente, mesmo catálogo
@@ -123,6 +142,27 @@ def _exigir_desenvolvimento() -> None:
 
 
 def _limpar(sessao: Session) -> None:
+    # TRAVA: --limpar apaga TODO produto/categoria/marca, sem filtrar por
+    # origem_url — só é seguro num banco que tem SÓ massa sintética. Conta
+    # quem não tem o carimbo 'gerar_massa' (incluindo nulo: `IS DISTINCT
+    # FROM` trata NULL como diferente de verdade, ao contrário de `!=`, que
+    # simplesmente IGNORA linha nula e deixaria a trava furada bem no caso
+    # que ela existe pra pegar) antes de apagar qualquer coisa.
+    estranhos = sessao.scalar(
+        select(func.count())
+        .select_from(Produto)
+        .where(Produto.origem_url.is_distinct_from("gerar_massa"))
+    )
+    if estranhos:
+        sys.exit(
+            f"--limpar recusado: {estranhos} produto(s) no banco não têm "
+            "origem_url = 'gerar_massa' — ou vieram de scripts/importar_catalogo.py "
+            "(codigo_origem preenchido) ou foram criados pelo painel (nenhum dos "
+            "dois é marcado como massa sintética, de propósito). --limpar apagaria "
+            "esses produtos junto. Para limpar só a massa sintética, rode:\n\n"
+            "    DELETE FROM produtos WHERE origem_url = 'gerar_massa';\n"
+        )
+
     # Imagens e variações somem por cascata da FK ao apagar o produto.
     sessao.execute(delete(Banner))
     sessao.execute(delete(Produto))
@@ -271,15 +311,18 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
                 if aleatorio.random() < 0.20
                 else f"{nome}. Peça importada, disponível para atendimento."
             ),
+            # Carimbo da massa sintética — ver o docstring do módulo.
+            origem_url="gerar_massa",
             status=status,
-            destaque=aleatorio.random() < 0.02,
+            # destaque fica para _marcar_produtos_destaque, depois que todo
+            # produto já existe: precisa escolher exatamente LIMITE_DESTAQUES
+            # (o teto que PATCH /admin/destaques/produtos aceita), não um
+            # sorteio por produto sem relação nenhuma com esse número.
             marca_id=marca.id,
             categoria_id=categoria.id,
             colecao_id=colecao_id,
             criado_em=criado_em,
         )
-        if produto.destaque:
-            produto.destaque_ordem = aleatorio.randint(1, 40)
 
         # ~12% dos produtos sem imagem nenhuma: `capa` nula é caso real, e a
         # tarefa 68 precisa conseguir contar esses.
@@ -356,6 +399,38 @@ def _garantir_banners(sessao: Session) -> None:
     print("banners: 4 criados (3 ativos)")
 
 
+def _marcar_produtos_destaque(sessao: Session) -> None:
+    """Escolhe exatamente LIMITE_DESTAQUES produtos — nunca mais — e numera
+    1..N. Antes disso era `destaque = aleatorio.random() < 0.02` por produto,
+    sem relação nenhuma com o teto real: em 11.569 produtos isso rendia ~235
+    marcados, um estado que PATCH /admin/destaques/produtos nunca produziria
+    (ele recusa lista maior que o teto, ver `_conferir_lista` do serviço)."""
+    ja_marcados = sessao.scalar(
+        select(func.count()).select_from(Produto).where(Produto.destaque.is_(True))
+    )
+    if ja_marcados:
+        print(f"produtos em destaque: {ja_marcados} já marcados")
+        return
+
+    # Oculto nunca é destaque — a mesma regra que o serviço aplica (produto
+    # oculto marcado como destaque some da home inteira, sem erro nenhum pra
+    # avisar). Marcar um aqui deixaria a massa num estado que a API recusa.
+    elegiveis = list(
+        sessao.scalars(select(Produto.id).where(Produto.status != "oculto"))
+    )
+    aleatorio = random.Random(SEMENTE)
+    escolhidos = aleatorio.sample(elegiveis, min(LIMITE_DESTAQUES, len(elegiveis)))
+
+    for posicao, produto_id in enumerate(escolhidos, start=1):
+        sessao.execute(
+            update(Produto)
+            .where(Produto.id == produto_id)
+            .values(destaque=True, destaque_ordem=posicao)
+        )
+    sessao.commit()
+    print(f"produtos em destaque: {len(escolhidos)} marcados (teto {LIMITE_DESTAQUES})")
+
+
 def _marcar_categorias_destaque(sessao: Session) -> None:
     ja_marcadas = sessao.scalar(
         select(func.count()).select_from(Categoria).where(Categoria.destaque.is_(True))
@@ -422,7 +497,10 @@ def _resumo(sessao: Session) -> None:
 def main() -> None:
     analisador = argparse.ArgumentParser(description=__doc__)
     analisador.add_argument(
-        "--limpar", action="store_true", help="apaga produtos, categorias e marcas antes"
+        "--limpar",
+        action="store_true",
+        help="apaga TODO produto/categoria/marca antes (não só a massa sintética — "
+        "recusa sozinho se houver produto sem origem_url = 'gerar_massa' no banco)",
     )
     argumentos = analisador.parse_args()
 
@@ -436,6 +514,7 @@ def main() -> None:
         categorias = _garantir_categorias(sessao)
         _gerar_produtos(sessao, marcas, categorias)
         _garantir_banners(sessao)
+        _marcar_produtos_destaque(sessao)
         _marcar_categorias_destaque(sessao)
         _resumo(sessao)
 
