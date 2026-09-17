@@ -6,15 +6,26 @@ inteiro de uma vez. Ver scripts/exemplo_catalogo.csv para o formato exato.
 NÃO apaga a massa sintética de scripts/gerar_massa.py. As peças reais entram
 ao lado dela — a limpeza da massa é decisão separada, de outro dia.
 
-Colunas do CSV (cabeçalho obrigatório, nessa ordem ou não — é por nome):
+Colunas do CSV (cabeçalho obrigatório, nessa ordem ou não — é por nome; o
+nome da coluna é comparado sem diferenciar maiúscula/acento/espaço nas
+pontas, então "Coleção", "COLECAO" e " colecao " são todas aceitas como
+`colecao` — planilha exportada do Excel no Brasil costuma vir assim):
     codigo_origem, nome, marca, categoria, colecao, descricao,
     tamanhos, cores, foto_1, foto_2, foto_3, origem_url
 
+O arquivo é lido como UTF-8 e, se isso falhar, como CP1252 (Windows-1252) —
+é a codificação que o Excel no Brasil grava por padrão ao "Salvar como CSV",
+não UTF-8, e é o formato mais provável do arquivo que o cliente for mandar.
+
   - codigo_origem: identificador da peça NA PLANILHA DO FORNECEDOR. É a chave
-    de deduplicação (produtos.codigo_origem) — rodar o mesmo arquivo duas
-    vezes não duplica nada, e mudar uma linha e rodar de novo ATUALIZA a peça
-    existente em vez de criar outra. Obrigatório e não pode repetir dentro do
-    próprio arquivo.
+    de deduplicação (produtos.codigo_origem) — reimportar o MESMO arquivo em
+    execuções diferentes não duplica nada, e mudar uma linha e rodar de novo
+    ATUALIZA a peça existente em vez de criar outra. Obrigatório.
+    Repetir o mesmo codigo_origem DENTRO do mesmo arquivo é erro (a segunda
+    ocorrência falha, apontando em qual linha o código já tinha aparecido)
+    — não silenciosamente "a segunda sobrescreve a primeira", que é perda de
+    dado sem aviso nenhum: das duas linhas do fornecedor, uma delas está
+    errada, e o script não adivinha qual.
   - nome: até 180 caracteres.
   - marca, categoria: se já existirem no catálogo (comparando por slug, sem
     diferenciar maiúscula/acento/espaço), a peça entra nelas. Se não
@@ -22,10 +33,18 @@ Colunas do CSV (cabeçalho obrigatório, nessa ordem ou não — é por nome):
     só existem duas (feminino/masculino) e este script NUNCA cria uma
     terceira; escreva exatamente "feminino" ou "masculino".
   - descricao: opcional.
-  - tamanhos, cores: opcional. Vários valores na MESMA célula, separados por
-    ";" (ex.: "P;M;G" ou "Preta;Azul Marinho"). Cada um vira uma
-    produto_variacoes com disponivel=true — o admin ajusta disponibilidade
-    depois pelo painel, isto aqui só cadastra o que existe.
+  - cores: opcional. Vários valores na MESMA célula, separados por ";"
+    (ex.: "Preta;Azul Marinho"). Cada um vira uma produto_variacoes com
+    disponivel=true — o admin ajusta disponibilidade depois pelo painel,
+    isto aqui só cadastra o que existe.
+  - tamanhos: opcional, mesma ideia de `cores`, mas aceita ";", ",", "/" e a
+    palavra "e" como separador dentro da MESMA célula — "38;39;40",
+    "38, 39 e 40" e "38/39/40" viram a mesma lista ["38", "39", "40"]. Sem
+    isso, um fornecedor que escreve "38, 39 e 40" numa linha e "38/39/40"
+    noutra faz duas peças iguais nascerem com seletor de tamanho diferente
+    (pior ainda: o cliente final veria uma opção literal "39 e 40", porque
+    a célula inteira virava um único valor). Espaço sobrando em cada item e
+    item repetido dentro da célula são descartados.
   - foto_1, foto_2, foto_3: URL da foto no site do fornecedor, na ordem em
     que devem aparecer (foto_1 = capa). Até 3; pode faltar qualquer uma.
     Cada URL preenchida é BAIXADA aqui, nunca gravada direto no banco — ver
@@ -110,6 +129,7 @@ import argparse
 import csv
 import io
 import os
+import re
 import sys
 import urllib.request
 from dataclasses import dataclass, field
@@ -131,7 +151,7 @@ from vip_api.modelos.catalogo import (  # noqa: E402
     ProdutoImagem,
     ProdutoVariacao,
 )
-from vip_api.texto import gerar_slug  # noqa: E402
+from vip_api.texto import gerar_slug, normalizar  # noqa: E402
 
 # Reaproveita a mecânica de código (tarefa 71) já usada pelo painel, em vez de
 # reinventar: mesmo prefixo por marca (o que a marca já usa, se já tem peça
@@ -161,7 +181,7 @@ COLUNAS_OBRIGATORIAS = [
     "origem_url",
 ]
 COLUNAS_FOTO = ["foto_1", "foto_2", "foto_3"]
-SEPARADOR_LISTA = ";"  # dentro de tamanhos/cores — a coluna do CSV usa --delimitador
+SEPARADOR_LISTA = ";"  # dentro de cores — tamanhos tem separador próprio, ver _dividir_tamanhos
 
 LADO_GRANDE = 1200
 LADO_MINIATURA = 400
@@ -198,17 +218,52 @@ class Relatorio:
 # ======================================================================
 
 
+def _ler_texto(caminho: Path) -> str:
+    """UTF-8 primeiro; se o arquivo não decodificar como UTF-8, tenta CP1252
+    (Windows-1252). É o que o Excel no Brasil grava por padrão ao "Salvar
+    como CSV" — não UTF-8 — e é o formato mais provável do arquivo que o
+    cliente mandar. CP1252 nunca levanta erro de decodificação (todo byte
+    0x00-0xFF mapeia para algum caractere), então só cai aqui quando o UTF-8
+    já falhou."""
+    dados = caminho.read_bytes()
+    try:
+        return dados.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return dados.decode("cp1252")
+
+
+def _normalizar_nome_coluna(nome: str) -> str:
+    """Minúsculas, sem acento, sem espaço nas pontas — "Coleção", "COLECAO"
+    e " colecao " todas viram "colecao". Mesma normalização usada em marca/
+    categoria (vip_api.texto.normalizar), para o cabeçalho ter a mesma
+    tolerância que o resto do script já tem com texto do fornecedor."""
+    return normalizar(nome)
+
+
 def _ler_linhas(caminho: Path, delimitador: str) -> list[dict[str, str]]:
-    with caminho.open(newline="", encoding="utf-8-sig") as arquivo:
-        leitor = csv.DictReader(arquivo, delimiter=delimitador)
-        faltando = [c for c in COLUNAS_OBRIGATORIAS if c not in (leitor.fieldnames or [])]
-        if faltando:
-            sys.exit(
-                f"Cabeçalho do CSV não tem a(s) coluna(s) {faltando}. "
-                f"Esperado: {COLUNAS_OBRIGATORIAS}. "
-                "Se a planilha foi salva com ';' pelo Excel em pt-BR, use --delimitador ';'."
-            )
-        return [linha for linha in leitor]
+    texto = _ler_texto(caminho)
+    leitor = csv.DictReader(io.StringIO(texto), delimiter=delimitador)
+    cabecalho_bruto = leitor.fieldnames or []
+    coluna_por_normalizado = {_normalizar_nome_coluna(c): c for c in cabecalho_bruto}
+
+    faltando = [c for c in COLUNAS_OBRIGATORIAS if c not in coluna_por_normalizado]
+    if faltando:
+        sys.exit(
+            f"Cabeçalho do CSV não tem a(s) coluna(s) {faltando}. "
+            f"Esperado: {COLUNAS_OBRIGATORIAS}. "
+            "Se a planilha foi salva com ';' pelo Excel em pt-BR, use --delimitador ';'."
+        )
+
+    # Troca só o nome das colunas OBRIGATÓRIAS pela grafia canônica (é o que
+    # _campo()/_lista() procuram); coluna extra do fornecedor fica como está,
+    # sem uso mesmo.
+    canonico_por_coluna_bruta = {
+        coluna_por_normalizado[c]: c for c in COLUNAS_OBRIGATORIAS
+    }
+    leitor.fieldnames = [
+        canonico_por_coluna_bruta.get(c, c) for c in cabecalho_bruto
+    ]
+    return [linha for linha in leitor]
 
 
 def _campo(linha: dict[str, str], nome: str) -> str:
@@ -220,6 +275,24 @@ def _lista(linha: dict[str, str], nome: str) -> list[str]:
     if not bruto:
         return []
     return [item.strip() for item in bruto.split(SEPARADOR_LISTA) if item.strip()]
+
+
+# "38;39;40", "38, 39 e 40" e "38 / 39 / 40" viram a mesma lista — ";", ",",
+# "/" e a palavra "e" (isolada, com espaço nos dois lados) são todos
+# separadores válidos dentro da mesma célula de tamanhos.
+_SEPARADOR_TAMANHOS = re.compile(r"\s*[,;/]\s*|\s+e\s+", re.IGNORECASE)
+
+
+def _dividir_tamanhos(bruto: str) -> list[str]:
+    """Só para `tamanhos` (não `cores`, que continua só com ';' — não foi
+    pedido). Tira espaço sobrando de cada item e item repetido dentro da
+    MESMA célula, mantendo a ordem em que apareceram."""
+    itens: list[str] = []
+    for pedaco in _SEPARADOR_TAMANHOS.split(bruto):
+        item = pedaco.strip()
+        if item and item not in itens:
+            itens.append(item)
+    return itens
 
 
 def _validar_tamanho(valor: str, maximo: int, campo: str) -> str:
@@ -388,11 +461,13 @@ def _importar_linha(
     sessao: Session,
     linha: dict[str, str],
     *,
+    indice: int,
     saida_dir: Path | None,
     url_base: str | None,
     cache_marcas: dict[str, Marca],
     cache_colecoes: dict[str, Colecao],
     cache_categorias: dict[tuple[int, str], Categoria],
+    codigos_vistos: dict[str, int],
 ) -> bool:
     """Devolve True se criou, False se atualizou. Levanta exceção se a linha
     for inválida — quem chama decide o que fazer (ver laço principal)."""
@@ -400,6 +475,18 @@ def _importar_linha(
     if not codigo_origem:
         raise ValueError("codigo_origem vazio — é a chave de deduplicação, não dá pra importar sem.")
     codigo_origem = _validar_tamanho(codigo_origem, 80, "codigo_origem")
+
+    # Repetir codigo_origem DENTRO do mesmo arquivo é erro, não "a segunda
+    # atualiza a primeira" — isso seria perda de dado em silêncio, pior que
+    # um crash. `codigos_vistos` só vive durante ESTA execução: reimportar o
+    # mesmo arquivo depois, numa segunda chamada do script, continua
+    # atualizando a peça normalmente (ver _importar_linha mais abaixo).
+    if codigo_origem in codigos_vistos:
+        raise ValueError(
+            f"codigo_origem {codigo_origem!r} repetido neste arquivo — já apareceu na linha "
+            f"{codigos_vistos[codigo_origem]} (esta é a linha {indice})."
+        )
+    codigos_vistos[codigo_origem] = indice
 
     nome = _validar_tamanho(_campo(linha, "nome"), 180, "nome")
     if not nome:
@@ -418,7 +505,7 @@ def _importar_linha(
     descricao = _campo(linha, "descricao") or None
     # text, sem limite de tamanho no schema (docs/modelagem-banco.md 4.4) — só rastreabilidade.
     origem_url = _campo(linha, "origem_url") or None
-    tamanhos = [_validar_tamanho(v, 60, "tamanhos") for v in _lista(linha, "tamanhos")]
+    tamanhos = [_validar_tamanho(v, 60, "tamanhos") for v in _dividir_tamanhos(_campo(linha, "tamanhos"))]
     cores = [_validar_tamanho(v, 60, "cores") for v in _lista(linha, "cores")]
     urls_foto = [_campo(linha, coluna) for coluna in COLUNAS_FOTO]
     urls_foto = [u for u in urls_foto if u]
@@ -544,6 +631,9 @@ def main() -> None:
     cache_marcas: dict[str, Marca] = {}
     cache_colecoes: dict[str, Colecao] = {}
     cache_categorias: dict[tuple[int, str], Categoria] = {}
+    # codigo_origem -> linha onde apareceu primeiro NESTE arquivo, só para
+    # detectar repetição dentro da própria execução (ver _importar_linha).
+    codigos_vistos: dict[str, int] = {}
 
     with SessaoLocal() as sessao:
         for indice, linha in enumerate(linhas, start=2):  # start=2: linha 1 do arquivo é o cabeçalho
@@ -553,11 +643,13 @@ def main() -> None:
                     criou = _importar_linha(
                         sessao,
                         linha,
+                        indice=indice,
                         saida_dir=saida_dir,
                         url_base=url_base_env,
                         cache_marcas=cache_marcas,
                         cache_colecoes=cache_colecoes,
                         cache_categorias=cache_categorias,
+                        codigos_vistos=codigos_vistos,
                     )
                 if not argumentos.simular:
                     # Confirma a linha inteira (produto + imagens + variações) de uma vez, JÁ NO
