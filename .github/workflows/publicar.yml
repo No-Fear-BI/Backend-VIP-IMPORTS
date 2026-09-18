@@ -1,0 +1,149 @@
+# Publicação do backend — trilha de DevOps (Dev 4), tarefa 13.
+#
+# "Publicar uma versão nova precisa ser um comando só, ou automático ao enviar
+# código para a branch principal."
+#
+#   merge na main  ->  testa, constrói a imagem, publica em HOMOLOGAÇÃO sozinho
+#   produção       ->  Actions > Publicar > Run workflow > ambiente: producao
+#
+# Homologação automática e produção sob comando é o que permite publicar dez
+# vezes por dia sem medo: o erro aparece no ensaio, não no site do cliente.
+#
+# Este workflow publica SÓ a API. O site tem o dele, no Frontend-VIP-IMPORTS, e
+# os dois lados avançam sem esperar um pelo outro — por isso o deploy chama
+# `publicar.sh <ambiente> --api <tag>`, que não encosta na versão do site.
+
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+    # Mexer em documentação não gera imagem nem deploy.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: "Onde publicar"
+        required: true
+        default: homologacao
+        type: choice
+        options: [homologacao, producao]
+      tag:
+        description: "Versão já existente a publicar (SHA curto). Vazio = testa e constrói a partir deste commit."
+        required: false
+        type: string
+
+# Um deploy por vez, e sem cancelar o que começou: interromper deploy no meio
+# deixa o ambiente num estado que ninguém sabe descrever.
+concurrency:
+  group: publicar-backend
+  cancel-in-progress: false
+
+jobs:
+  # A suíte inteira, reaproveitada de testes.yml. Pulada só quando o disparo
+  # manual aponta para uma versão que JÁ existe — nesse caso ela já passou
+  # quando aquela imagem foi construída, e rodar de novo testaria o código de
+  # hoje contra uma imagem de ontem.
+  testes:
+    if: ${{ inputs.tag == '' }}
+    uses: ./.github/workflows/testes.yml
+
+  construir:
+    needs: testes
+    # `always()` porque `needs` de job pulado deixaria este pulado junto.
+    if: ${{ always() && (needs.testes.result == 'success' || needs.testes.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.versao.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir a versão
+        id: versao
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}"     >> "$GITHUB_OUTPUT"
+            echo "construir=nao"             >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+            echo "construir=sim"                       >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Entrar no registro
+        if: steps.versao.outputs.construir == 'sim'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Token do próprio job — não precisa de secret. Quem autoriza o push
+          # da imagem é a permissão `packages: write` declarada acima.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Nome do dono em minúsculas
+        if: steps.versao.outputs.construir == 'sim'
+        id: dono
+        # O GHCR só aceita caminho minúsculo, e a organização é "No-Fear-BI".
+        run: echo "nome=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.versao.outputs.construir == 'sim'
+
+      - name: Construir e enviar a imagem
+        if: steps.versao.outputs.construir == 'sim'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ steps.dono.outputs.nome }}/vip-imports-api:${{ steps.versao.outputs.tag }}
+          # Cache entre execuções. Sem ele, cada push reinstala todas as
+          # dependências do zero e o build passa de 4 minutos.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  homologacao:
+    needs: construir
+    if: ${{ github.event_name == 'push' || inputs.ambiente == 'homologacao' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: homologacao
+      url: https://${{ vars.DOMINIO_HOMOLOGACAO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/publicar-no-servidor
+        with:
+          ambiente: homologacao
+          componente: api
+          tag: ${{ needs.construir.outputs.tag }}
+          servidor: ${{ secrets.SSH_SERVIDOR }}
+          usuario: ${{ secrets.SSH_USUARIO }}
+          chave: ${{ secrets.SSH_CHAVE }}
+          hosts_conhecidos: ${{ secrets.SSH_HOSTS_CONHECIDOS }}
+          caminho_infra: ${{ vars.CAMINHO_INFRA }}
+
+  producao:
+    needs: construir
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.ambiente == 'producao' }}
+    runs-on: ubuntu-latest
+    # O ambiente "producao" (Settings > Environments) pode exigir aprovação de
+    # outra pessoa antes deste job começar. É a trava humana da tarefa 14:
+    # ninguém publica no site do cliente sozinho.
+    environment:
+      name: producao
+      url: https://${{ vars.DOMINIO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/publicar-no-servidor
+        with:
+          ambiente: producao
+          componente: api
+          tag: ${{ needs.construir.outputs.tag }}
+          servidor: ${{ secrets.SSH_SERVIDOR }}
+          usuario: ${{ secrets.SSH_USUARIO }}
+          chave: ${{ secrets.SSH_CHAVE }}
+          hosts_conhecidos: ${{ secrets.SSH_HOSTS_CONHECIDOS }}
+          caminho_infra: ${{ vars.CAMINHO_INFRA }}

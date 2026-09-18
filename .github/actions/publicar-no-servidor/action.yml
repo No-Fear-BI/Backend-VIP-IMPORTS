@@ -1,0 +1,88 @@
+# Passo compartilhado de deploy — trilha de DevOps (Dev 4), tarefa 13.
+#
+# Entra no servidor por SSH e chama `deploy/publicar.sh` do repositório de
+# infraestrutura. Toda a lógica de publicação (migração, healthcheck, teste de
+# fumaça, volta automática) mora LÁ, num script que também roda à mão. O CI é
+# só mais um jeito de disparar o mesmo comando — é isso que impede o deploy de
+# virar uma coisa que "só o GitHub sabe fazer".
+#
+# Este arquivo é IDÊNTICO no Backend-VIP-IMPORTS e no Frontend-VIP-IMPORTS.
+# Mudou aqui, mude lá.
+
+name: Publicar no servidor
+description: Entra por SSH e roda deploy/publicar.sh no servidor da VIP Imports.
+
+inputs:
+  ambiente:
+    description: producao ou homologacao
+    required: true
+  componente:
+    description: api ou web
+    required: true
+  tag:
+    description: versão a publicar (SHA curto)
+    required: true
+  servidor:
+    description: IP ou hostname do servidor
+    required: true
+  usuario:
+    description: usuário de SSH
+    required: true
+  chave:
+    description: chave SSH privada de deploy
+    required: true
+  hosts_conhecidos:
+    description: linha de known_hosts do servidor (saída de ssh-keyscan)
+    required: true
+  caminho_infra:
+    description: caminho do Infra-VIP-IMPORTS no servidor
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Conferir os parâmetros
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ inputs.componente }}" in api|web) ;; *) echo "componente inválido"; exit 1 ;; esac
+        case "${{ inputs.ambiente }}" in producao|homologacao) ;; *) echo "ambiente inválido"; exit 1 ;; esac
+        [ -n "${{ inputs.servidor }}" ]         || { echo "::error::secret SSH_SERVIDOR não configurado"; exit 1; }
+        [ -n "${{ inputs.usuario }}" ]          || { echo "::error::secret SSH_USUARIO não configurado"; exit 1; }
+        [ -n "${{ inputs.hosts_conhecidos }}" ] || { echo "::error::secret SSH_HOSTS_CONHECIDOS não configurado"; exit 1; }
+        [ -n "${{ inputs.caminho_infra }}" ]    || { echo "::error::variable CAMINHO_INFRA não configurada"; exit 1; }
+
+    - name: Preparar o SSH
+      shell: bash
+      env:
+        CHAVE: ${{ inputs.chave }}
+        HOSTS: ${{ inputs.hosts_conhecidos }}
+      run: |
+        set -euo pipefail
+        # umask antes de criar: o arquivo nasce 600, nunca existe um instante
+        # em que a chave está legível por outro processo do runner.
+        umask 077
+        mkdir -p ~/.ssh
+        printf '%s\n' "$CHAVE" > ~/.ssh/deploy
+        printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+        # known_hosts com a chave do servidor, e não StrictHostKeyChecking=no:
+        # aceitar qualquer host é aceitar um intermediário se passando pelo
+        # servidor e recebendo a nossa chave de deploy.
+        chmod 600 ~/.ssh/deploy ~/.ssh/known_hosts
+
+    - name: Publicar
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Publicando ${{ inputs.componente }} ${{ inputs.tag }} em ${{ inputs.ambiente }}"
+        ssh -i ~/.ssh/deploy \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            "${{ inputs.usuario }}@${{ inputs.servidor }}" \
+            "cd '${{ inputs.caminho_infra }}' && ./deploy/publicar.sh '${{ inputs.ambiente }}' --${{ inputs.componente }} '${{ inputs.tag }}' --nao-perguntar"
+
+    - name: Apagar a chave
+      if: always()
+      shell: bash
+      run: rm -f ~/.ssh/deploy ~/.ssh/known_hosts

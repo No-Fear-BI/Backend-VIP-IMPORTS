@@ -1,0 +1,75 @@
+# CI do backend — trilha de DevOps (Dev 4), tarefa 13.
+#
+# Roda a suíte a cada push e a cada pull request. É a porta que o código passa
+# antes de virar imagem publicável: publicar.yml só constrói se este passar.
+
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Chamado por publicar.yml antes de construir a imagem: a suite roda UMA
+  # vez e os dois workflows enxergam o mesmo resultado.
+  workflow_call:
+
+# Um push novo na mesma branch cancela o anterior. Sem isto, três commits
+# seguidos ocupam três runners rodando a mesma coisa.
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vip_imports
+          POSTGRES_PASSWORD: vip_imports
+          POSTGRES_DB: vip_imports
+        ports:
+          - 5432:5432
+        # Sem isto o job começa antes do banco aceitar conexão e o primeiro
+        # teste falha por "connection refused" — erro que não tem nada a ver
+        # com o código e faz perder meia hora.
+        options: >-
+          --health-cmd "pg_isready -U vip_imports"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # `testes/conftest.py` acrescenta o sufixo `_teste` a este nome e cria o
+      # banco sozinho na primeira execução.
+      DATABASE_URL: postgresql+psycopg://vip_imports:vip_imports@localhost:5432/vip_imports
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -e ".[dev]"
+
+      - name: Rodar a suíte
+        # `-s` mostra a tabela da varredura de proteção do painel (tarefa 79) —
+        # ela sai no log do CI, que é onde alguém vai procurar depois.
+        run: pytest -s
+
+      - name: Auditoria do contrato da API
+        # Sai com código 1 se faltar rota do contrato ou aparecer rota nova sem
+        # justificativa. Código 2 (arquivo ainda é reconstrução) não derruba o
+        # CI — é pendência conhecida, não regressão.
+        run: |
+          python scripts/auditoria_contrato.py || codigo=$?
+          if [ "${codigo:-0}" = "1" ]; then
+            echo "::error::a API divergiu do contrato v1.0 (docs/contrato-api-v1.json)"
+            exit 1
+          fi
+          exit 0
