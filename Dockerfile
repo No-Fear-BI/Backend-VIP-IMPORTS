@@ -11,6 +11,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY data ./data
 COPY alembic.ini ./
 COPY migracoes ./migracoes
 # Os comandos de operação rodam DENTRO do container no servidor: criar e trocar
