@@ -8,6 +8,7 @@ inteiro; se um modelo novo não for importado aqui, ele some da comparação.
 from vip_api.modelos.acesso import AcessoConfig, AcessoSolicitacao
 from vip_api.modelos.acesso_tentativas import TentativaAcesso
 from vip_api.modelos.admin import Administrador, AdminSessao
+from vip_api.modelos.revisao import DecisaoRevisao
 from vip_api.modelos.base import Base
 from vip_api.modelos.catalogo import (
     Banner,

@@ -35,6 +35,7 @@ from vip_api.rotas.admin_relatorios import (
     roteador_selecoes,
 )
 from vip_api.rotas.admin_produtos import roteador as roteador_produtos
+from vip_api.rotas.admin_revisao import roteador as roteador_revisao
 
 roteador = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(exigir_admin)])
 
@@ -49,6 +50,7 @@ roteador.include_router(roteador_destaques)
 roteador.include_router(roteador_resumo)
 roteador.include_router(roteador_selecoes)
 roteador.include_router(roteador_clientes)
+roteador.include_router(roteador_revisao)
 
 
 @roteador.get("/eu", response_model=AdminEu)

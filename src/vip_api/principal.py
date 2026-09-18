@@ -21,6 +21,7 @@ from vip_api.rotas.favoritos import roteador as roteador_favoritos
 from vip_api.rotas.home import roteador as roteador_home
 from vip_api.rotas.navegacao import roteador as roteador_navegacao
 from vip_api.rotas.produtos import roteador as roteador_produtos
+from vip_api.rotas.produtos_aprovados import roteador as roteador_produtos_aprovados
 from vip_api.rotas.selecoes import roteador as roteador_selecoes
 from vip_api.rotas.saude import roteador as roteador_saude
 
@@ -52,6 +53,7 @@ app.add_exception_handler(Exception, tratar_excecao_nao_tratada)
 roteador_v1 = APIRouter(prefix="/api/v1")
 roteador_v1.include_router(roteador_saude)
 roteador_v1.include_router(roteador_produtos)
+roteador_v1.include_router(roteador_produtos_aprovados)
 roteador_v1.include_router(roteador_navegacao)
 roteador_v1.include_router(roteador_home)
 roteador_v1.include_router(roteador_clientes)
