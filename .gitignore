@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .env
+data/pending-products.backup.json
+data/pending-products.tmp.json
+data/yupoo-categories.html

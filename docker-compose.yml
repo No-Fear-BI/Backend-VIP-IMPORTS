@@ -38,7 +38,7 @@ services:
       # com --reload abaixo, edicao no host reinicia o processo sozinho.
       - ./src:/app/src
       # A fotografia dos fornecedores é somente leitura: decisões vivem no PostgreSQL,
-      # nunca no JSON original com os 1.377 produtos.
+      # nunca no JSON atualizado pelo importador.
       - ./data:/app/data:ro
     command: ["uvicorn", "vip_api.principal:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:

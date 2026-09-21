@@ -173,3 +173,9 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
 
   **Os itens são dado CONGELADO**: `codigo`, `nome`, `marca`, `categoria`, `colecao`, `imagemUrl` e `variacao` são cópias do que o cliente viu no envio, não um JOIN com o catálogo de hoje. Se o produto foi excluído depois, `produtoId` vem `null` e o resto continua igual — não esconda o item nem tente buscar o produto por esse id sem checar o nulo.
 - **`GET /api/v1/admin/clientes`** — os clientes cadastrados, com `?busca=` (parte do e-mail ou do nome, ignorando caixa) e paginação. Cada um traz `totalSelecoes`, que é o número que diz quem vale a pena atender, mais `ultimoAcessoEm` e o **telefone** — aqui ele aparece porque é o painel, e é com ele que o atendimento responde.
+
+## Importação completa do Yupoo e fila de revisão
+
+Execute `node scripts/sync-yupoo.mjs` na raiz do backend. O script percorre a listagem global do fornecedor qwer888 até o total de páginas declarado, sem filtro de marcas. Confere o total de álbuns únicos antes de substituir o JSON, cria `data/pending-products.backup.json` e registra a contagem em `data/sync-yupoo-report.json`. Uma falha de rede ou contagem mantém a fila anterior. Reexecuções usam o ID do álbum e não duplicam produtos. Registros antigos e outros fornecedores são preservados. Produtos novos ficam em `A classificar`; categorias já atribuídas são mantidas. As decisões continuam no PostgreSQL.
+
+`GET /api/v1/admin/revisao/pendentes` aceita `pagina` (mínimo 1) e `porPagina` (1–100, padrão 60), além de `busca` e `categoria`. Retorna `items`, `total`, `categories`, `pagina`, `paginas` e `porPagina`. O total considera o filtro e exclui produtos já decididos; páginas fora do intervalo são ajustadas para a última página. O backend recarrega o catálogo quando o arquivo muda. Depois de decidir um produto, o frontend atualiza a página para repor os itens disponíveis.
