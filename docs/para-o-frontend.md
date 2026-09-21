@@ -142,6 +142,8 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
 
 ## Cores: vocabulário no painel e filtro na vitrine (revisão 0007, 21/09/2026)
 
+Estas rotas e parâmetros são posteriores ao contrato v1.0: estão em `docs/contrato-api-v1-adendo.json`, não no `contrato-api-v1.json` (que é a transcrição do PDF do cliente).
+
 Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que muda para o frontend:
 
 - **`GET /api/v1/cores`** (público, sem sessão) — a paleta para montar o filtro. Só as cores **ativas**. Cada uma traz `id`, `nome`, `slug` e `totalProdutos` (contando só produto visível, como em `GET /marcas`). Cor recém-criada aparece com `totalProdutos: 0` — não some da lista por não ter produto ainda.
