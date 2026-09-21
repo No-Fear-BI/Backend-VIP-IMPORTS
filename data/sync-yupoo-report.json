@@ -1,0 +1,21 @@
+{
+  "concluidoEm": "2026-09-21T20:03:22.822Z",
+  "fornecedores": [
+    {
+      "fornecedor": "qwer888",
+      "paginas": 105,
+      "informado": 12557,
+      "coletados": 12557
+    },
+    {
+      "fornecedor": "jypj",
+      "paginas": 8,
+      "informado": 917,
+      "coletados": 917
+    }
+  ],
+  "coletados": 13474,
+  "anteriores": 12647,
+  "adicionados": 917,
+  "total": 13564
+}

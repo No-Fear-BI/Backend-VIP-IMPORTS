@@ -6,3 +6,7 @@ __pycache__/
 # Upload de imagem do painel (IMAGENS_DIR, configuracao.py) — fica no volume
 # Docker em desenvolvimento; nunca deveria ir pro repositório.
 /dados/
+
+data/pending-products.backup.json
+data/pending-products.tmp.json
+data/yupoo-categories.html

@@ -1,0 +1,26 @@
+﻿import test from 'node:test';
+import assert from 'node:assert/strict';
+import { extrair, totais, mesclar, decodificar } from './sync-yupoo.mjs';
+const html = '<a class="album__main" href="/albums/123?uid=1"><img data-src="https://photo.yupoo.com/test/small.jpg"></a><div class="text_overflow album__title">Gucci &amp; Nike &#x3D; &#39;teste&#39;</div>';
+test('importa todos os títulos, inclusive marcas, com imagem e ID estável', () => {
+  const [item] = extrair(html);
+  assert.equal(item.id, 'qwer888-123');
+  assert.equal(item.name, "Gucci & Nike = 'teste'");
+  assert.equal(item.image, 'https://photo.yupoo.com/test/medium.jpg');
+  assert.equal(item.reviewStatus, 'pending');
+});
+test('interpreta totais e rejeita página de bloqueio', () => {
+  assert.deepEqual(totais('in total 12557 albums in total 105 pages'), { albuns: 12557, paginas: 105 });
+  assert.throws(() => totais('<h1>Captcha</h1>'));
+  assert.equal(decodificar('page&#x3D;2&amp;a=1'), 'page=2&a=1');
+});
+test('reimportação não duplica e preserva categorias e outros fornecedores', () => {
+  const anteriores = [{ id: 'qwer888-123', category: 'Camisas' }, { id: 'outro-2', category: 'Bolsas' }, { id: 'qwer888-antigo', category: 'Moletons' }];
+  const novos = extrair(html);
+  const resultado = mesclar(anteriores, novos);
+  assert.equal(resultado.length, 3);
+  assert.equal(resultado[0].category, 'Camisas');
+  assert.deepEqual(mesclar(resultado, novos), resultado);
+  assert.deepEqual(resultado[1], anteriores[1]);
+  assert.deepEqual(resultado[2], anteriores[2]);
+});
