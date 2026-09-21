@@ -30,6 +30,7 @@ from vip_api.esquemas.produto import (
 from vip_api.modelos.catalogo import (
     Categoria,
     Colecao,
+    Cor,
     Marca,
     Produto,
     ProdutoImagem,
@@ -49,6 +50,9 @@ class FiltrosProduto:
     colecao: str | None = None
     categoria: str | None = None
     marca: str | None = None
+    # Slugs de cor separados por vírgula, como `marca`: ?cor=preto,bege é OU
+    # entre as duas, e não produto que tenha as duas ao mesmo tempo.
+    cor: str | None = None
     busca: str | None = None
     ordem: str = ORDEM_RECENTES
     cursor: str | None = None
@@ -98,6 +102,7 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
         "colecao_id": None,
         "categoria_id": None,
         "marca_ids": None,
+        "cor_ids": None,
         "marcas_da_busca": [],
     }
 
@@ -125,6 +130,18 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
             if not marca_ids:
                 return None
             resolvidos["marca_ids"] = marca_ids
+
+    if filtros.cor:
+        slugs = [s.strip() for s in filtros.cor.split(",") if s.strip()]
+        if slugs:
+            # Cor inativa não entra: o dono tirou da paleta, e um link antigo
+            # com ?cor=bordo não pode ressuscitar o filtro na vitrine.
+            cor_ids = list(
+                sessao.scalars(select(Cor.id).where(Cor.slug.in_(slugs), Cor.ativa.is_(True)))
+            )
+            if not cor_ids:
+                return None
+            resolvidos["cor_ids"] = cor_ids
 
     if filtros.busca:
         # As marcas que casam com o termo são resolvidas ANTES, numa consulta
@@ -154,6 +171,20 @@ def _aplicar_filtros(stmt: Select, filtros: FiltrosProduto, ids: dict) -> Select
 
     if ids["marca_ids"] is not None:
         stmt = stmt.where(Produto.marca_id.in_(ids["marca_ids"]))
+
+    if ids["cor_ids"] is not None:
+        # EXISTS, e não JOIN: um produto com três variações da mesma cor
+        # apareceria três vezes no JOIN, e consertar isso com DISTINCT quebra
+        # o early termination do índice de ordenação (ver _consulta_da_pagina).
+        # O EXISTS para na primeira linha que casa, pelo ix_produto_variacoes_cor.
+        stmt = stmt.where(
+            select(ProdutoVariacao.id)
+            .where(
+                ProdutoVariacao.produto_id == Produto.id,
+                ProdutoVariacao.cor_id.in_(ids["cor_ids"]),
+            )
+            .exists()
+        )
 
     if filtros.busca:
         termo = f"%{normalizar(filtros.busca)}%"

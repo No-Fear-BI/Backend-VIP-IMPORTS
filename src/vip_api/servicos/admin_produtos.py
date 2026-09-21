@@ -62,6 +62,9 @@ class FiltrosAdmin:
     marca_id: int | None = None
     categoria_id: int | None = None
     colecao_id: int | None = None
+    # Id, e não slug como na vitrine: o painel já tem a lista de cores em mãos
+    # (GET /admin/cores) e trabalha com id em todos os outros filtros.
+    cor_id: int | None = None
     status: str | None = None
     pagina: int = 1
     por_pagina: int = POR_PAGINA_PADRAO
@@ -82,6 +85,18 @@ def _aplicar_filtros(stmt, filtros: FiltrosAdmin):
         stmt = stmt.where(Produto.categoria_id == filtros.categoria_id)
     elif filtros.colecao_id is not None:
         stmt = stmt.where(Produto.colecao_id == filtros.colecao_id)
+
+    if filtros.cor_id is not None:
+        # EXISTS pelo mesmo motivo da vitrine: JOIN repetiria o produto que tem
+        # a cor em mais de uma variação, e o total da paginação mentiria.
+        stmt = stmt.where(
+            select(ProdutoVariacao.id)
+            .where(
+                ProdutoVariacao.produto_id == Produto.id,
+                ProdutoVariacao.cor_id == filtros.cor_id,
+            )
+            .exists()
+        )
 
     if filtros.busca:
         termo = f"%{normalizar(filtros.busca)}%"
@@ -590,6 +605,9 @@ def duplicar_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
                 produto_id=copia.id,
                 tipo=variacao.tipo,
                 valor=variacao.valor,
+                # A cópia aponta para a MESMA cor do vocabulário: sem isto a
+                # ck_produto_variacoes_cor_id recusaria a variação de cor.
+                cor_id=variacao.cor_id,
                 disponivel=variacao.disponivel,
                 ordem=variacao.ordem,
             )

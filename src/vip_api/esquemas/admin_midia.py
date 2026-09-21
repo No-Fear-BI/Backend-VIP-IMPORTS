@@ -40,8 +40,19 @@ class OrdemEntrada(EsquemaEntrada):
 
 
 class VariacaoEntrada(EsquemaEntrada):
+    """`cor_id` só vale para `tipo='cor'`, e é OPCIONAL de propósito.
+
+    Mandando `corId`, o nome exibido passa a ser o nome da cor no vocabulário —
+    é o caminho do painel, onde a cor é escolhida numa lista. Sem `corId`, a
+    cor é resolvida pelo texto de `valor` e, se ainda não existir na paleta,
+    nasce ali (ver servicos/admin_variacoes.definir_variacoes). Exigir o id
+    quebraria `scripts/importar_catalogo.py`, que monta variação a partir da
+    coluna `cores` de uma planilha, onde id nenhum existe.
+    """
+
     tipo: Literal["tamanho", "cor"]
     valor: str = Field(min_length=1, max_length=60)
+    cor_id: int | None = None
     disponivel: bool = True
 
 

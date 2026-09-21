@@ -140,6 +140,34 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
 
   Quando uma variação sai, os itens de carrinho que a usavam perdem aquela escolha; se o cliente ficar com dois itens iguais do mesmo produto, eles viram um só. Nada disso devolve erro — é a API acertando o carrinho, e a tela do cliente vê o resultado no próximo `GET /carrinho`.
 
+## Cores: vocabulário no painel e filtro na vitrine (revisão 0007, 21/09/2026)
+
+Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que muda para o frontend:
+
+- **`GET /api/v1/cores`** (público, sem sessão) — a paleta para montar o filtro. Só as cores **ativas**. Cada uma traz `id`, `nome`, `slug` e `totalProdutos` (contando só produto visível, como em `GET /marcas`). Cor recém-criada aparece com `totalProdutos: 0` — não some da lista por não ter produto ainda.
+- **`GET /api/v1/produtos?cor=preto`** — o filtro da vitrine, **por slug**, e aceita vários separados por vírgula (`?cor=preto,bege`), com **OU** entre eles: traz quem tem preto OU bege, não quem tem os dois. Slug que não existe (ou cor inativa) devolve lista vazia com `total: 0`, e não erro — é filtro que não casa nada, igual a `?marca=`. Combina com todos os outros filtros.
+- **`GET` / `POST /api/v1/admin/cores`, `PATCH` / `DELETE /api/v1/admin/cores/:id`** — o CRUD da paleta, irmão do de marcas. A listagem traz `totalProdutos` por cor (contando os ocultos, é o painel) — mostre esse número ANTES do botão de excluir. Campos: `nome` (obrigatório, até 60), `slug` (opcional, gerado do nome), `ordem` e `ativa`.
+
+  **O slug nasce do nome e não muda sozinho**, pela mesma razão da marca: `?cor=preto` é link compartilhável. Para trocar, mande `slug` no corpo. Slug gerado que colide ganha sufixo (`bege-2`); slug informado que colide é **409 `SLUG_EM_USO`**.
+
+  **Excluir cor em uso é 409 `COR_EM_USO`**, com a contagem em `erro.detalhes.totalProdutos`.
+
+- **Renomear a cor reescreve o texto exibido em todas as variações que a usam.** É o que faz a correção valer para a loja inteira sem reabrir produto por produto. Há um caso que a API recusa: se algum produto já tiver OUTRA variação de cor com o nome novo, a troca colidiria na unicidade `(produto, tipo, valor)` — a resposta é **409 `COR_EM_CONFLITO`**, com `erro.detalhes.codigoProduto` dizendo qual produto trava. Mostre esse código e peça o ajuste na grade daquele produto; a API não apaga variação por conta própria, porque a que sumiria pode estar no carrinho de um cliente.
+
+- **`PATCH /admin/produtos/:id/variacoes` ganhou `corId` na variação de cor**, e ele é **opcional**:
+
+  ```json
+  { "variacoes": [ { "tipo": "cor", "valor": "Preto", "corId": 3 }, { "tipo": "tamanho", "valor": "M" } ] }
+  ```
+
+  Mandando `corId`, **o nome exibido passa a ser o nome da cor no vocabulário** — o `valor` enviado é ignorado. É o caminho do painel, onde a cor é escolhida numa lista. Sem `corId`, a cor é resolvida pelo **slug do texto**: "Preto", "preto" e "PRETO" caem todos na mesma cor, e se nenhuma casar, **a cor é criada ali**. Isso mantém funcionando o importador de planilha, que não tem id nenhum — mas na tela prefira o seletor, porque pelo caminho de texto um erro de digitação vira cor nova na paleta. `corId` em variação de `tipo: "tamanho"` é **400**; `corId` inexistente é **404 `COR_NAO_ENCONTRADA`**.
+
+- **`GET /admin/produtos?corId=`** — a busca de produtos por cor no painel. Aqui é **id**, não slug (o painel já tem a lista em mãos e usa id em todos os outros filtros), e traz os ocultos junto, como o resto da rota.
+
+- **Códigos de erro novos:** `COR_NAO_ENCONTRADA` (404), `COR_EM_USO` (409, exclusão) e `COR_EM_CONFLITO` (409, renomeação).
+
+- **Nada mudou na leitura pública do produto.** `variacaoCor` continua `{id, tipo, valor, disponivel}`, e o carrinho segue com `variacaoCorId` apontando para a **variação**, não para a cor. Nenhuma tela existente precisa mudar por causa desta revisão.
+
 ## Painel administrativo — marcas, categorias e banners (tarefa 57)
 
 - **`GET` / `POST /api/v1/admin/marcas`, `PATCH` / `DELETE /api/v1/admin/marcas/:id`.** A listagem traz `totalProdutos` por marca (contando os ocultos, é o painel) — mostre esse número na tela ANTES do botão de excluir.

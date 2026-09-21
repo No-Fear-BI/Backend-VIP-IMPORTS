@@ -50,6 +50,9 @@ def listar(
     marca_id: int | None = Query(None, alias="marcaId"),
     categoria_id: int | None = Query(None, alias="categoriaId"),
     colecao_id: int | None = Query(None, alias="colecaoId"),
+    cor_id: int | None = Query(
+        None, alias="corId", description="Produtos que têm esta cor na grade de variações."
+    ),
     status: StatusProduto | None = Query(
         None, description="Ausente traz TUDO, inclusive os ocultos."
     ),
@@ -65,6 +68,7 @@ def listar(
             marca_id=marca_id,
             categoria_id=categoria_id,
             colecao_id=colecao_id,
+            cor_id=cor_id,
             status=status,
             pagina=pagina,
             por_pagina=por_pagina,

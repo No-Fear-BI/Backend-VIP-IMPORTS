@@ -77,6 +77,36 @@ class Marca(Base):
     produtos: Mapped[list["Produto"]] = relationship(back_populates="marca")
 
 
+class Cor(Base):
+    """O vocabulário de cores da loja (revisão 0007).
+
+    Tabela de referência como Marca, e pelo mesmo motivo: o slug é a URL
+    pública do filtro (`/todos?cor=preto`), então nasce do nome na criação e só
+    muda quando alguém manda `slug` explicitamente.
+
+    Não tem `nome_busca` — cor não entra na busca por texto do catálogo, que
+    procura em nome de produto e de marca. Acrescentar a coluna por simetria
+    seria manter um índice trigram que nenhuma consulta lê.
+    """
+
+    __tablename__ = "cores"
+    __table_args__ = (UniqueConstraint("slug", name="uq_cores_slug"),)
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    nome: Mapped[str] = mapped_column(String(60))
+    slug: Mapped[str] = mapped_column(String(60))
+    ordem: Mapped[int] = mapped_column(Integer, server_default="0")
+    ativa: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    criado_em: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    atualizado_em: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+    variacoes: Mapped[list["ProdutoVariacao"]] = relationship(back_populates="cor")
+
+
 class Categoria(Base):
     __tablename__ = "categorias"
     __table_args__ = (
@@ -336,12 +366,29 @@ class ProdutoVariacao(Base):
         # Alvo da FK composta de carrinho_itens (revisão 0005): `id` já é PK,
         # mas o PostgreSQL exige unicidade declarada no PAR referenciado.
         UniqueConstraint("id", "tipo", name="uq_produto_variacoes_id_tipo"),
+        # Revisão 0007: variação de cor aponta para o vocabulário; variação de
+        # tamanho, nunca. RESTRICT para excluir cor em uso virar 409 com a
+        # contagem, e não apagar a variação que alguém tem no carrinho.
+        ForeignKeyConstraint(
+            ["cor_id"],
+            ["cores.id"],
+            name="fk_produto_variacoes_cor_id_cores",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "(tipo = 'cor'::variacao_tipo) = (cor_id IS NOT NULL)",
+            name="ck_produto_variacoes_cor_id",
+        ),
+        Index("ix_produto_variacoes_cor", "cor_id", "produto_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     produto_id: Mapped[int] = mapped_column(Integer)
     tipo: Mapped[str] = mapped_column(VARIACAO_TIPO)
+    # O texto EXIBIDO. Para tipo='cor' ele é o nome da cor no momento em que a
+    # grade foi salva; quem filtra lê `cor_id`, nunca este campo (revisão 0007).
     valor: Mapped[str] = mapped_column(String(60))
+    cor_id: Mapped[int | None] = mapped_column(Integer)
     disponivel: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     ordem: Mapped[int] = mapped_column(Integer, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(
@@ -352,6 +399,7 @@ class ProdutoVariacao(Base):
     )
 
     produto: Mapped["Produto"] = relationship(back_populates="variacoes")
+    cor: Mapped["Cor | None"] = relationship(back_populates="variacoes")
 
 
 class Banner(Base):

@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from vip_api.erros.codigos import COLECAO_NAO_ENCONTRADA
 from vip_api.erros.excecoes import AppError
-from vip_api.esquemas.navegacao import CategoriaItem, ColecaoItem, MarcaItem
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto
+from vip_api.esquemas.navegacao import CategoriaItem, ColecaoItem, CorItem, MarcaItem
+from vip_api.modelos.catalogo import Categoria, Colecao, Cor, Marca, Produto, ProdutoVariacao
 
 # `status <> 'oculto'` vive DENTRO do ON do LEFT JOIN, não no WHERE. No WHERE
 # ele descartaria a linha inteira da marca sem produto visível, e "Goyard (0)"
@@ -42,6 +42,35 @@ def listar_marcas(sessao: Session) -> list[MarcaItem]:
             total_produtos=linha.total_produtos,
         )
         for linha in linhas
+    ]
+
+
+def listar_cores(sessao: Session) -> list[CorItem]:
+    """A paleta do filtro da vitrine.
+
+    `count(DISTINCT produtos.id)` e não `count(*)`: a mesma cor pode estar em
+    duas variações do mesmo produto (grafias diferentes, dado anterior à
+    revisão 0007, que ligou a cor sem reescrever o texto), e o produto contaria
+    duas vezes. Cor sem produto visível continua na lista, com zero — quem
+    acabou de cadastrar "Off-white" precisa vê-la na paleta.
+    """
+    linhas = sessao.execute(
+        select(
+            Cor.id,
+            Cor.nome,
+            Cor.slug,
+            func.count(func.distinct(Produto.id)).label("total_produtos"),
+        )
+        .outerjoin(ProdutoVariacao, ProdutoVariacao.cor_id == Cor.id)
+        .outerjoin(Produto, (Produto.id == ProdutoVariacao.produto_id) & _VISIVEL)
+        .where(Cor.ativa.is_(True))
+        .group_by(Cor.id)
+        .order_by(Cor.ordem.asc(), Cor.nome.asc())
+    ).all()
+
+    return [
+        CorItem(id=l.id, nome=l.nome, slug=l.slug, total_produtos=l.total_produtos)
+        for l in linhas
     ]
 
 

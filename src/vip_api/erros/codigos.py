@@ -28,6 +28,13 @@ CODIGO_EM_USO = "CODIGO_EM_USO"
 SLUG_EM_USO = "SLUG_EM_USO"
 MARCA_COM_PRODUTOS = "MARCA_COM_PRODUTOS"
 CATEGORIA_COM_PRODUTOS = "CATEGORIA_COM_PRODUTOS"
+COR_NAO_ENCONTRADA = "COR_NAO_ENCONTRADA"
+COR_EM_USO = "COR_EM_USO"
+# Renomear cor reescreve o `valor` das variações que apontam para ela. Se um
+# produto já tiver outra variação com o nome novo, a UNIQUE (produto, tipo,
+# valor) recusa — e a tela precisa saber que foi colisão de nome, não falha
+# genérica, para sugerir juntar as duas cores em vez de tentar de novo.
+COR_EM_CONFLITO = "COR_EM_CONFLITO"
 EXCESSO_TENTATIVAS = "EXCESSO_TENTATIVAS"
 ERRO_INTERNO = "ERRO_INTERNO"
 

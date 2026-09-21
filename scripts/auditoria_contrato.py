@@ -53,6 +53,13 @@ FORA_DO_CONTRATO = {
     ("GET", "/health"): "infraestrutura (docker healthcheck); não é rota de produto",
     ("GET", "/admin/eu"): "tarefa 53; registrada em docs/para-o-frontend.md",
     ("PATCH", "/admin/banners/ordem"): "tarefa 57 (ordem contígua exige rota); registrada em docs/para-o-frontend.md",
+    # Vocabulário de cores (revisão 0007): pedido do cliente em 21/09/2026,
+    # posterior ao contrato v1.0. Registradas em docs/para-o-frontend.md.
+    ("GET", "/cores"): "revisão 0007 (paleta do filtro ?cor=); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/cores"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/cores"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
+    ("PATCH", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
+    ("DELETE", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do
