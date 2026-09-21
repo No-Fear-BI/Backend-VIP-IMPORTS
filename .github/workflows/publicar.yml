@@ -34,6 +34,11 @@ on:
         description: "Versão já existente a publicar (SHA curto). Vazio = testa e constrói a partir deste commit."
         required: false
         type: string
+      confirmar:
+        description: "Para publicar em PRODUÇÃO, digite PUBLICAR. Ignorado em homologação."
+        required: false
+        default: ""
+        type: string
 
 # Um deploy por vez, e sem cancelar o que começou: interromper deploy no meio
 # deixa o ambiente num estado que ninguém sabe descrever.
@@ -123,19 +128,39 @@ jobs:
           usuario: ${{ secrets.SSH_USUARIO }}
           chave: ${{ secrets.SSH_CHAVE }}
           hosts_conhecidos: ${{ secrets.SSH_HOSTS_CONHECIDOS }}
+          porta: ${{ vars.SSH_PORTA }}
           caminho_infra: ${{ vars.CAMINHO_INFRA }}
 
   producao:
     needs: construir
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.ambiente == 'producao' }}
     runs-on: ubuntu-latest
-    # O ambiente "producao" (Settings > Environments) pode exigir aprovação de
-    # outra pessoa antes deste job começar. É a trava humana da tarefa 14:
-    # ninguém publica no site do cliente sozinho.
+    # O ambiente "producao" existe em Settings > Environments, mas a proteção
+    # "Required reviewers" NÃO ESTÁ VALENDO: a organização está no GitHub Free
+    # e, no Free, essa proteção (como branch protection e rulesets) só é
+    # aplicada em repositório PÚBLICO. Em repositório privado ela aparece
+    # configurada e fica "Not enforced" — pior que não ter, porque parece que
+    # tem.
+    #
+    # Enquanto a organização não subir para o plano Team, a trava é a
+    # confirmação digitada abaixo. Não substitui revisão de outra pessoa: o
+    # que ela impede é o acidente — o clique errado no menu, o "Run workflow"
+    # com o ambiente errado selecionado. Contra publicar sozinho de propósito,
+    # o que vale é o acordo de processo da tarefa 14.
     environment:
       name: producao
       url: https://${{ vars.DOMINIO }}
     steps:
+      - name: Conferir a confirmação
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirmar }}" != "PUBLICAR" ]; then
+            echo "::error::Para publicar em produção, preencha o campo 'confirmar' com PUBLICAR."
+            echo "Nada foi publicado. O site continua na versão anterior."
+            exit 1
+          fi
+          echo "Confirmado. Publicando em produção."
+
       - uses: actions/checkout@v4
       - uses: ./.github/actions/publicar-no-servidor
         with:
@@ -146,4 +171,5 @@ jobs:
           usuario: ${{ secrets.SSH_USUARIO }}
           chave: ${{ secrets.SSH_CHAVE }}
           hosts_conhecidos: ${{ secrets.SSH_HOSTS_CONHECIDOS }}
+          porta: ${{ vars.SSH_PORTA }}
           caminho_infra: ${{ vars.CAMINHO_INFRA }}

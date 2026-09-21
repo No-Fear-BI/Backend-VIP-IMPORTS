@@ -32,8 +32,15 @@ inputs:
     description: chave SSH privada de deploy
     required: true
   hosts_conhecidos:
-    description: linha de known_hosts do servidor (saída de ssh-keyscan)
+    description: linha de known_hosts do servidor (saída de ssh-keyscan -p PORTA)
     required: true
+  porta:
+    description: >-
+      Porta do SSH. Vazio = 22. Alguns provedores entregam o VPS noutra porta
+      (a HostGator usa 22022), e nesse caso a 22 está FECHADA no firewall —
+      o deploy falha com "Connection refused" e parece problema de chave.
+    required: false
+    default: "22"
   caminho_infra:
     description: caminho do Infra-VIP-IMPORTS no servidor
     required: true
@@ -51,6 +58,8 @@ runs:
         [ -n "${{ inputs.usuario }}" ]          || { echo "::error::secret SSH_USUARIO não configurado"; exit 1; }
         [ -n "${{ inputs.hosts_conhecidos }}" ] || { echo "::error::secret SSH_HOSTS_CONHECIDOS não configurado"; exit 1; }
         [ -n "${{ inputs.caminho_infra }}" ]    || { echo "::error::variable CAMINHO_INFRA não configurada"; exit 1; }
+        porta="${{ inputs.porta }}"
+        case "${porta:-22}" in ''|*[!0-9]*) echo "::error::porta SSH inválida: '$porta'"; exit 1 ;; esac
 
     - name: Preparar o SSH
       shell: bash
@@ -74,8 +83,14 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        echo "Publicando ${{ inputs.componente }} ${{ inputs.tag }} em ${{ inputs.ambiente }}"
+        # A variable SSH_PORTA pode não existir no repositório; nesse caso o
+        # input chega vazio (o `default` do action só vale quando a chave é
+        # OMITIDA, não quando ela vem com valor vazio). Daí o fallback aqui.
+        PORTA="${{ inputs.porta }}"
+        PORTA="${PORTA:-22}"
+        echo "Publicando ${{ inputs.componente }} ${{ inputs.tag }} em ${{ inputs.ambiente }} (ssh porta $PORTA)"
         ssh -i ~/.ssh/deploy \
+            -p "$PORTA" \
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
