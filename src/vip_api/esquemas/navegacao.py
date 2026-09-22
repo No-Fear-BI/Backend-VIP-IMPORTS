@@ -16,6 +16,15 @@ class MarcaItem(EsquemaResposta):
     total_produtos: int
 
 
+class CorItem(EsquemaResposta):
+    """A paleta que a vitrine oferece como filtro (`?cor=`). Só as ativas."""
+
+    id: int
+    nome: str
+    slug: str
+    total_produtos: int
+
+
 class ColecaoItem(EsquemaResposta):
     id: int
     nome: str

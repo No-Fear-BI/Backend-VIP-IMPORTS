@@ -146,6 +146,7 @@ from vip_api.banco import SessaoLocal  # noqa: E402
 from vip_api.modelos.catalogo import (  # noqa: E402
     Categoria,
     Colecao,
+    Cor,
     Marca,
     Produto,
     ProdutoImagem,
@@ -165,6 +166,7 @@ from vip_api.servicos.admin_produtos import (  # noqa: E402
     _prefixo_da_marca,
     _proximo_sequencial,
 )
+from vip_api.servicos.admin_variacoes import obter_ou_criar_cor  # noqa: E402
 
 COLUNAS_OBRIGATORIAS = [
     "codigo_origem",
@@ -575,9 +577,26 @@ def _importar_linha(
         sessao.add(
             ProdutoVariacao(produto_id=produto.id, tipo="tamanho", valor=valor, disponivel=True, ordem=ordem)
         )
-    for ordem, valor in enumerate(cores, start=1):
+    # A coluna `cores` da planilha é texto livre; obter_ou_criar_cor
+    # transforma em linha do vocabulário (revisão 0007), criando a cor que
+    # faltar e reaproveitando a de mesmo slug. Sem cor_id, a CHECK recusa a
+    # linha. "Preto;preto" na MESMA célula cai na mesma cor: fica a primeira,
+    # senão a UNIQUE (produto, tipo, valor) derrubaria a linha inteira.
+    cores_da_linha: list[Cor] = []
+    for valor in cores:
+        cor = obter_ou_criar_cor(sessao, valor)
+        if cor not in cores_da_linha:
+            cores_da_linha.append(cor)
+    for ordem, cor in enumerate(cores_da_linha, start=1):
         sessao.add(
-            ProdutoVariacao(produto_id=produto.id, tipo="cor", valor=valor, disponivel=True, ordem=ordem)
+            ProdutoVariacao(
+                produto_id=produto.id,
+                tipo="cor",
+                valor=cor.nome,
+                cor_id=cor.id,
+                disponivel=True,
+                ordem=ordem,
+            )
         )
     for ordem, (url_final, alt) in enumerate(imagens_processadas, start=1):
         sessao.add(

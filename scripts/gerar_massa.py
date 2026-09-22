@@ -61,6 +61,7 @@ from vip_api.modelos.catalogo import (  # noqa: E402
 # Mesmo teto que PATCH /admin/destaques/produtos aceita (servicos/admin_destaques.py)
 # e que a home renderiza — marcar mais do que isso é um estado que a API nunca produz.
 from vip_api.servicos.home import LIMITE_DESTAQUES  # noqa: E402
+from vip_api.servicos.admin_variacoes import obter_ou_criar_cor  # noqa: E402
 
 TOTAL_PRODUTOS = 11_569
 SEMENTE = 20260910  # massa reproduzível: mesma semente, mesmo catálogo
@@ -225,6 +226,13 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
     aleatorio = random.Random(SEMENTE)
     codigos_existentes = set(sessao.scalars(select(Produto.codigo)))
 
+    # A paleta inteira de uma vez, antes do laço: são 12 cores fixas, e chamar
+    # obter_ou_criar_cor dentro do laço faria um SELECT por variação de cor em
+    # 11 mil produtos. A CHECK ck_produto_variacoes_cor_id (revisão 0007) exige
+    # cor_id em toda variação de cor.
+    cores_por_nome = {nome: obter_ou_criar_cor(sessao, nome) for nome in CORES}
+    sessao.commit()
+
     marcas_por_slug = {_slug(nome): (nome, prefixo, quantidade) for nome, prefixo, quantidade in MARCAS}
 
     slug_da_colecao = {c.id: c.slug for c in sessao.scalars(select(Colecao))}
@@ -347,8 +355,11 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
                 )
         if aleatorio.random() < 0.4:
             for cor_variacao in aleatorio.sample(CORES, aleatorio.randint(1, 3)):
+                cor = cores_por_nome[cor_variacao]
                 produto.variacoes.append(
-                    ProdutoVariacao(tipo="cor", valor=cor_variacao, disponivel=True)
+                    ProdutoVariacao(
+                        tipo="cor", valor=cor.nome, cor_id=cor.id, disponivel=True
+                    )
                 )
 
         lote.append(produto)

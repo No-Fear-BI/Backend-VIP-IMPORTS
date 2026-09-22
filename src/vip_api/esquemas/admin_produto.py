@@ -39,6 +39,19 @@ class ProdutoAdminItem(EsquemaResposta):
     atualizado_em: datetime
 
 
+class VariacaoAdmin(VariacaoDetalhe):
+    """A variação como o painel a vê: com `cor_id` da paleta (revisão 0007).
+
+    `PATCH /variacoes` substitui a grade inteira, então a tela reenvia também
+    as cores que o produto já tem. Sem o id aqui, ela só teria o texto — e
+    depois de renomear uma cor sem trocar o slug, o texto novo não casa com
+    slug nenhum e a gravação criaria uma cor duplicada. A leitura pública
+    (`VariacaoDetalhe`) não muda: cor da paleta é assunto do painel.
+    """
+
+    cor_id: int | None = None
+
+
 class ProdutoAdminDetalhe(EsquemaResposta):
     """O produto aberto no formulário de edição.
 
@@ -61,7 +74,7 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     categoria: Referencia
     colecao: Referencia
     imagens: list[ImagemDetalhe]
-    variacoes: list[VariacaoDetalhe]
+    variacoes: list[VariacaoAdmin]
     criado_em: datetime
     atualizado_em: datetime
 

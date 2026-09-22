@@ -25,6 +25,7 @@ from vip_api.esquemas.admin import AdminEu
 from vip_api.rotas.admin_catalogo import (
     roteador_banners,
     roteador_categorias,
+    roteador_cores,
     roteador_marcas,
 )
 from vip_api.rotas.admin_imagens import roteador as roteador_imagens
@@ -43,6 +44,7 @@ roteador = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(exig
 roteador.include_router(roteador_produtos)
 roteador.include_router(roteador_imagens)
 roteador.include_router(roteador_marcas)
+roteador.include_router(roteador_cores)
 roteador.include_router(roteador_categorias)
 roteador.include_router(roteador_banners)
 roteador.include_router(roteador_destaques)

@@ -19,6 +19,9 @@ from vip_api.esquemas.admin_catalogo import (
     CategoriaAdmin,
     CategoriaCriar,
     CategoriaEditar,
+    CorAdmin,
+    CorCriar,
+    CorEditar,
     MarcaAdmin,
     MarcaCriar,
     MarcaEditar,
@@ -37,6 +40,12 @@ from vip_api.servicos.admin_categorias import (
     excluir_categoria,
     listar_categorias,
 )
+from vip_api.servicos.admin_cores import (
+    criar_cor,
+    editar_cor,
+    excluir_cor,
+    listar_cores,
+)
 from vip_api.servicos.admin_marcas import (
     criar_marca,
     editar_marca,
@@ -45,6 +54,7 @@ from vip_api.servicos.admin_marcas import (
 )
 
 roteador_marcas = APIRouter(prefix="/marcas", tags=["admin"])
+roteador_cores = APIRouter(prefix="/cores", tags=["admin"])
 roteador_categorias = APIRouter(prefix="/categorias", tags=["admin"])
 roteador_banners = APIRouter(prefix="/banners", tags=["admin"])
 
@@ -79,6 +89,40 @@ def marcas_excluir(
     marca_id: int = Path(alias="marcaId"), sessao: Session = Depends(obter_sessao)
 ) -> dict[str, bool]:
     excluir_marca(sessao, marca_id)
+    return {"ok": True}
+
+
+# ======================================================================
+# Cores
+# ======================================================================
+
+
+@roteador_cores.get("", response_model=list[CorAdmin])
+def cores_listar(sessao: Session = Depends(obter_sessao)) -> list[CorAdmin]:
+    return listar_cores(sessao)
+
+
+@roteador_cores.post("", response_model=CorAdmin, status_code=201)
+def cores_criar(corpo: CorCriar, sessao: Session = Depends(obter_sessao)) -> CorAdmin:
+    return criar_cor(sessao, corpo)
+
+
+@roteador_cores.patch("/{corId}", response_model=CorAdmin)
+def cores_editar(
+    corpo: CorEditar,
+    cor_id: int = Path(alias="corId"),
+    sessao: Session = Depends(obter_sessao),
+) -> CorAdmin:
+    """Trocar o nome reescreve o texto das variações que usam a cor; trocar o
+    slug só acontece se `slug` vier no corpo."""
+    return editar_cor(sessao, cor_id, corpo)
+
+
+@roteador_cores.delete("/{corId}")
+def cores_excluir(
+    cor_id: int = Path(alias="corId"), sessao: Session = Depends(obter_sessao)
+) -> dict[str, bool]:
+    excluir_cor(sessao, cor_id)
     return {"ok": True}
 
 
