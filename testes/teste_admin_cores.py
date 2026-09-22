@@ -267,3 +267,77 @@ def teste_filtro_do_painel_por_cor_id(admin_logado, produto_preto):
 
     assert [p["codigo"] for p in corpo["dados"]] == ["CHN-7001"]
     assert corpo["paginacao"]["total"] == 1
+
+
+# ======================================================================
+# corId na leitura do painel: a tela reenvia a grade inteira com corId
+# ======================================================================
+
+
+def _grade_do_painel(admin_logado, produto_id):
+    return admin_logado.get(f"/api/v1/admin/produtos/{produto_id}").json()["variacoes"]
+
+
+def _cores_na_paleta(sessao):
+    return sessao.scalars(select(Cor.slug).order_by(Cor.slug)).all()
+
+
+def teste_leitura_do_painel_traz_cor_id_da_variacao(admin_logado, sessao, produto_preto):
+    preto = sessao.scalar(select(Cor).where(Cor.slug == "preto"))
+
+    variacoes = {v["tipo"]: v for v in _grade_do_painel(admin_logado, produto_preto.id)}
+
+    assert variacoes["cor"]["corId"] == preto.id
+    assert variacoes["tamanho"]["corId"] is None
+
+
+def teste_resposta_da_gravacao_da_grade_traz_cor_id(admin_logado, sessao, produto_preto):
+    preto = sessao.scalar(select(Cor).where(Cor.slug == "preto"))
+
+    resposta = admin_logado.patch(
+        f"/api/v1/admin/produtos/{produto_preto.id}/variacoes",
+        json={"variacoes": [{"tipo": "cor", "valor": "x", "corId": preto.id}]},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()[0]["corId"] == preto.id
+
+
+def teste_regravar_a_grade_depois_de_renomear_nao_duplica_a_cor(admin_logado, sessao, produto_preto):
+    """Renomear "Preto" para "Preto Ônix" mantém o slug `preto` e reescreve o
+    texto da variação. Pelo caminho de texto, o slug do texto novo
+    (`preto-onix`) não existe e a gravação criaria uma cor duplicada. Com o
+    `corId` que a leitura devolve, a grade volta intacta."""
+    preto = sessao.scalar(select(Cor).where(Cor.slug == "preto"))
+    admin_logado.patch(f"{ROTA}/{preto.id}", json={"nome": "Preto Ônix"})
+    paleta_antes = _cores_na_paleta(sessao)
+
+    grade = _grade_do_painel(admin_logado, produto_preto.id)
+    # Como a tela faz: a grade inteira de volta, e a cor pelo id da paleta.
+    reenvio = [
+        {"tipo": v["tipo"], "valor": v["valor"], "disponivel": v["disponivel"]}
+        | ({"corId": v["corId"]} if v["tipo"] == "cor" else {})
+        for v in grade
+    ]
+    resposta = admin_logado.patch(
+        f"/api/v1/admin/produtos/{produto_preto.id}/variacoes", json={"variacoes": reenvio}
+    )
+
+    assert resposta.status_code == 200
+    assert _cores_na_paleta(sessao) == paleta_antes
+    cor = next(v for v in resposta.json() if v["tipo"] == "cor")
+    assert (cor["valor"], cor["corId"]) == ("Preto Ônix", preto.id)
+
+
+def teste_sem_cor_id_a_regravacao_depois_de_renomear_cria_cor_nova(admin_logado, sessao, produto_preto):
+    """O risco que o corId evita, registrado: mandar só o texto depois de uma
+    renomeação cai no caminho do importador e nasce `preto-onix` na paleta."""
+    preto = sessao.scalar(select(Cor).where(Cor.slug == "preto"))
+    admin_logado.patch(f"{ROTA}/{preto.id}", json={"nome": "Preto Ônix"})
+
+    admin_logado.patch(
+        f"/api/v1/admin/produtos/{produto_preto.id}/variacoes",
+        json={"variacoes": [{"tipo": "cor", "valor": "Preto Ônix"}, {"tipo": "tamanho", "valor": "M"}]},
+    )
+
+    assert "preto-onix" in _cores_na_paleta(sessao)

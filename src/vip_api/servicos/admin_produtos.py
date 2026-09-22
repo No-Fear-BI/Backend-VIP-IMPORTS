@@ -32,9 +32,10 @@ from vip_api.esquemas.admin_produto import (
     ProdutoAdminItem,
     ProdutoCriar,
     ProdutoEditar,
+    VariacaoAdmin,
 )
 from vip_api.esquemas.base import Pagina, Paginacao
-from vip_api.esquemas.produto import Capa, ImagemDetalhe, Referencia, VariacaoDetalhe
+from vip_api.esquemas.produto import Capa, ImagemDetalhe, Referencia
 from vip_api.modelos.catalogo import (
     Categoria,
     Colecao,
@@ -244,6 +245,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
             ProdutoVariacao.tipo,
             ProdutoVariacao.valor,
             ProdutoVariacao.disponivel,
+            ProdutoVariacao.cor_id,
         )
         .where(ProdutoVariacao.produto_id == produto.id)
         .order_by(ProdutoVariacao.tipo.asc(), ProdutoVariacao.ordem.asc(), ProdutoVariacao.id.asc())
@@ -265,7 +267,9 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         colecao=Referencia(nome=cabecalho.colecao_nome, slug=cabecalho.colecao_slug),
         imagens=[ImagemDetalhe(id=i.id, url=i.url, alt=i.alt, ordem=i.ordem) for i in imagens],
         variacoes=[
-            VariacaoDetalhe(id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel)
+            VariacaoAdmin(
+                id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel, cor_id=v.cor_id
+            )
             for v in variacoes
         ],
         criado_em=produto.criado_em,

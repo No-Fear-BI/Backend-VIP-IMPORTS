@@ -17,6 +17,7 @@ from vip_api.esquemas.admin_produto import (
     ProdutoCriar,
     ProdutoEditar,
     StatusProduto,
+    VariacaoAdmin,
 )
 from vip_api.esquemas.admin_midia import (
     ImagensEntrada,
@@ -24,7 +25,7 @@ from vip_api.esquemas.admin_midia import (
     VariacoesEntrada,
 )
 from vip_api.esquemas.base import Pagina
-from vip_api.esquemas.produto import ImagemDetalhe, VariacaoDetalhe
+from vip_api.esquemas.produto import ImagemDetalhe
 from vip_api.servicos.admin_imagens import adicionar_imagens, reordenar_imagens
 from vip_api.servicos.admin_produtos import (
     POR_PAGINA_MAXIMO,
@@ -149,11 +150,11 @@ def imagens_reordenar(
     return reordenar_imagens(sessao, produto_id, corpo.ids)
 
 
-@roteador.patch("/{produtoId}/variacoes", response_model=list[VariacaoDetalhe])
+@roteador.patch("/{produtoId}/variacoes", response_model=list[VariacaoAdmin])
 def variacoes_definir(
     corpo: VariacoesEntrada,
     produto_id: int = Path(alias="produtoId"),
     sessao: Session = Depends(obter_sessao),
-) -> list[VariacaoDetalhe]:
+) -> list[VariacaoAdmin]:
     """SUBSTITUI o conjunto: o que não vier na lista sai."""
     return definir_variacoes(sessao, produto_id, corpo.variacoes)

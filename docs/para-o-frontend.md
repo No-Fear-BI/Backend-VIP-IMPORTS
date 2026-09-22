@@ -164,6 +164,8 @@ Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que mud
 
   Mandando `corId`, **o nome exibido passa a ser o nome da cor no vocabulário** — o `valor` enviado é ignorado. É o caminho do painel, onde a cor é escolhida numa lista. Sem `corId`, a cor é resolvida pelo **slug do texto**: "Preto", "preto" e "PRETO" caem todos na mesma cor, e se nenhuma casar, **a cor é criada ali**. Isso mantém funcionando o importador de planilha, que não tem id nenhum — mas na tela prefira o seletor, porque pelo caminho de texto um erro de digitação vira cor nova na paleta. `corId` em variação de `tipo: "tamanho"` é **400**; `corId` inexistente é **404 `COR_NAO_ENCONTRADA`**.
 
+- **A leitura do painel devolve o `corId` de cada variação**, em `GET /admin/produtos/:id` (`variacoes`) e na resposta do próprio `PATCH …/variacoes`. Em tamanho ele vem `null`. É daqui que a tela tira o id para reenviar a grade: como o PATCH substitui o conjunto inteiro, as cores que o produto já tem voltam também, e **precisam voltar com `corId`**. Pelo texto não serve: renomear "Preto" para "Preto Ônix" mantém o slug `preto` e reescreve o texto da variação, então no próximo salvamento o texto "Preto Ônix" (slug `preto-onix`) não casa com nada e cria uma cor duplicada, sem erro. A leitura pública (`GET /produtos/:codigo`) não traz `corId`.
+
 - **`GET /admin/produtos?corId=`** — a busca de produtos por cor no painel. Aqui é **id**, não slug (o painel já tem a lista em mãos e usa id em todos os outros filtros), e traz os ocultos junto, como o resto da rota.
 
 - **Códigos de erro novos:** `COR_NAO_ENCONTRADA` (404), `COR_EM_USO` (409, exclusão) e `COR_EM_CONFLITO` (409, renomeação).

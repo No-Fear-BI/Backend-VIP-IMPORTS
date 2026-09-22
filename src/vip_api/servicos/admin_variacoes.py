@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from vip_api.erros.codigos import COR_NAO_ENCONTRADA, DADOS_INVALIDOS, PRODUTO_NAO_ENCONTRADO
 from vip_api.erros.excecoes import AppError
 from vip_api.esquemas.admin_midia import VariacaoEntrada
-from vip_api.esquemas.produto import VariacaoDetalhe
+from vip_api.esquemas.admin_produto import VariacaoAdmin
 from vip_api.modelos.catalogo import Cor, Produto, ProdutoVariacao
 from vip_api.modelos.cliente import CarrinhoItem
 from vip_api.texto import gerar_slug
@@ -181,21 +181,21 @@ def _resolver_cor(sessao: Session, pedida: VariacaoEntrada) -> tuple[str, int | 
     return cor.nome, cor.id
 
 
-def listar_variacoes(sessao: Session, produto_id: int) -> list[VariacaoDetalhe]:
+def listar_variacoes(sessao: Session, produto_id: int) -> list[VariacaoAdmin]:
     linhas = sessao.scalars(
         select(ProdutoVariacao)
         .where(ProdutoVariacao.produto_id == produto_id)
         .order_by(ProdutoVariacao.tipo.asc(), ProdutoVariacao.ordem.asc(), ProdutoVariacao.id.asc())
     ).all()
     return [
-        VariacaoDetalhe(id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel)
+        VariacaoAdmin(id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel, cor_id=v.cor_id)
         for v in linhas
     ]
 
 
 def definir_variacoes(
     sessao: Session, produto_id: int, desejadas: list[VariacaoEntrada]
-) -> list[VariacaoDetalhe]:
+) -> list[VariacaoAdmin]:
     """SUBSTITUI o conjunto inteiro — "definir", como diz a seção 06 do
     contrato, não "acrescentar".
 
