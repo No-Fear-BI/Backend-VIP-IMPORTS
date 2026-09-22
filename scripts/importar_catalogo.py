@@ -137,7 +137,6 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PIL import Image, UnidentifiedImageError  # noqa: E402
 from sqlalchemy import delete, select  # noqa: E402
 from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -151,6 +150,12 @@ from vip_api.modelos.catalogo import (  # noqa: E402
     Produto,
     ProdutoImagem,
     ProdutoVariacao,
+)
+from vip_api.servicos.imagens_processamento import (  # noqa: E402
+    LADO_GRANDE,
+    QUALIDADE_WEBP,
+    abrir_imagem,
+    redimensionado,
 )
 from vip_api.texto import gerar_slug, normalizar  # noqa: E402
 
@@ -185,9 +190,10 @@ COLUNAS_OBRIGATORIAS = [
 COLUNAS_FOTO = ["foto_1", "foto_2", "foto_3"]
 SEPARADOR_LISTA = ";"  # dentro de cores — tamanhos tem separador próprio, ver _dividir_tamanhos
 
-LADO_GRANDE = 1200
+# LADO_GRANDE e QUALIDADE_WEBP vêm de vip_api.servicos.imagens_processamento
+# (compartilhado com o upload do painel). LADO_MINIATURA é só desta
+# importação em lote — o upload ao vivo não gera miniatura.
 LADO_MINIATURA = 400
-QUALIDADE_WEBP = 82
 TAMANHO_MAXIMO_FOTO = 15 * 1024 * 1024  # 15 MB: acima disso é fornecedor mandando coisa errada
 
 
@@ -410,20 +416,9 @@ def _baixar_imagem(url: str) -> Image.Image:
         raise ValueError(f"{url} passa de {TAMANHO_MAXIMO_FOTO // (1024 * 1024)} MB.")
 
     try:
-        imagem = Image.open(io.BytesIO(dados))
-        imagem.load()  # decodifica agora — é aqui que um arquivo corrompido ou HTML de erro disfarçado de imagem estoura
-    except UnidentifiedImageError as erro:
+        return abrir_imagem(dados)
+    except ValueError as erro:
         raise ValueError(f"{url} não é uma imagem que dá para abrir.") from erro
-    return imagem.convert("RGB")
-
-
-def _redimensionado(imagem: Image.Image, lado_maior: int) -> Image.Image:
-    largura, altura = imagem.size
-    fator = lado_maior / max(largura, altura)
-    if fator >= 1:
-        return imagem.copy()  # não estica foto pequena, só encolhe
-    novo_tamanho = (round(largura * fator), round(altura * fator))
-    return imagem.resize(novo_tamanho, Image.LANCZOS)
 
 
 def _processar_fotos(
@@ -438,8 +433,8 @@ def _processar_fotos(
 
     for ordem, url_origem in enumerate(urls_origem, start=1):
         imagem = _baixar_imagem(url_origem)
-        grande = _redimensionado(imagem, LADO_GRANDE)
-        miniatura = _redimensionado(imagem, LADO_MINIATURA)
+        grande = redimensionado(imagem, LADO_GRANDE)
+        miniatura = redimensionado(imagem, LADO_MINIATURA)
 
         pasta.mkdir(parents=True, exist_ok=True)
         caminho_grande = pasta / f"{ordem}.webp"

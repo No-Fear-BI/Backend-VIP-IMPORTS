@@ -8,7 +8,7 @@ NÃO existe CRUD de coleções, e não é esquecimento: são duas, fixas, vindas
 migração 0002, e o contrato não tem rota para elas.
 """
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, File, Form, Path, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from vip_api.banco import obter_sessao
@@ -27,6 +27,7 @@ from vip_api.esquemas.admin_catalogo import (
     MarcaEditar,
     OrdemBanners,
 )
+from vip_api.esquemas.admin_midia import ImagemUploadSaida
 from vip_api.servicos.admin_banners import (
     criar_banner,
     editar_banner,
@@ -34,6 +35,8 @@ from vip_api.servicos.admin_banners import (
     listar_banners,
     reordenar_banners,
 )
+from vip_api.servicos.admin_upload import upload_imagem_banner
+from vip_api.servicos.imagens_processamento import TAMANHO_MAXIMO_ARQUIVO
 from vip_api.servicos.admin_categorias import (
     criar_categoria,
     editar_categoria,
@@ -179,6 +182,19 @@ def banners_criar(
     corpo: BannerCriar, sessao: Session = Depends(obter_sessao)
 ) -> BannerAdmin:
     return criar_banner(sessao, corpo)
+
+
+@roteador_banners.post("/upload", response_model=ImagemUploadSaida, status_code=201)
+def banners_upload(
+    arquivo: UploadFile = File(...),
+    alt: str | None = Form(None, max_length=200),
+) -> ImagemUploadSaida:
+    """Processa o arquivo e grava em disco. Não existe banner ainda nesta
+    etapa — devolve `{url, alt}` para o formulário preencher o campo de
+    imagem (desktop ou celular) e seguir para o `POST`/`PATCH` de sempre."""
+    dados = arquivo.file.read(TAMANHO_MAXIMO_ARQUIVO + 1)
+    url, alt_final = upload_imagem_banner(dados, alt)
+    return ImagemUploadSaida(url=url, alt=alt_final)
 
 
 # ANTES de /{bannerId}: "ordem" casaria com o parâmetro de caminho e morreria

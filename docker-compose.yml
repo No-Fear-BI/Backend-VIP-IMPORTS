@@ -31,12 +31,21 @@ services:
       NIVEL_LOG: ${NIVEL_LOG:-INFO}
       PROXIES_CONFIAVEIS: ${PROXIES_CONFIAVEIS:-}
       WHATSAPP_LOJA: ${WHATSAPP_LOJA:-}
+      IMAGENS_DIR: ${IMAGENS_DIR:-./dados/imagens}
+      IMAGENS_URL_BASE: ${IMAGENS_URL_BASE:-http://localhost:8000/midia}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       # Monta o codigo fonte por cima do que foi copiado na imagem — junto
       # com --reload abaixo, edicao no host reinicia o processo sozinho.
       - ./src:/app/src
+      # Imagem enviada pelo painel (upload de produto/banner). Volume nomeado,
+      # nao bind mount: sobrevive a "docker compose down" e a rebuild da
+      # imagem, e nao fica espalhado dentro da pasta do repo. Em producao,
+      # troque por um volume que entre no backup — perder isto e perder toda
+      # foto que o cliente subiu pelo painel, nao so a que a importacao em
+      # lote gerou (essa o CSV original ainda tem).
+      - imagens_painel:/app/dados/imagens
     command: ["uvicorn", "vip_api.principal:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       banco:
@@ -44,3 +53,4 @@ services:
 
 volumes:
   banco_dados:
+  imagens_painel:

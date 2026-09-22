@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from vip_api.esquemas.base import EsquemaEntrada
+from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
 
 # Teto por produto. A grade do site mostra uma capa e a página do produto
 # mostra a galeria; passar disso é peso de carregamento para o visitante, não
@@ -30,6 +30,15 @@ class ImagemEntrada(EsquemaEntrada):
 
 class ImagensEntrada(EsquemaEntrada):
     imagens: list[ImagemEntrada] = Field(min_length=1, max_length=LIMITE_IMAGENS)
+
+
+class ImagemUploadSaida(EsquemaResposta):
+    """Resposta do upload de arquivo (produto e banner) — mesma forma que um
+    item de `ImagemEntrada`, para a tela reaproveitar o campo de URL/alt que
+    já tem, sem um tipo de dado novo para essa etapa."""
+
+    url: str
+    alt: str | None = None
 
 
 class OrdemEntrada(EsquemaEntrada):

@@ -123,6 +123,7 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   ```
 
   **Só `https`** — imagem em `http` dentro de uma página `https` é bloqueada pelo navegador como conteúdo misto e o produto aparece sem foto. Máximo de **10 imagens por produto**. As novas entram **no fim** da ordem, então acrescentar foto nunca troca a capa. Responde **201** com a galeria inteira já renumerada.
+- **`POST /api/v1/admin/produtos/:id/imagens/upload`** — upload de arquivo (revisão upload de imagem). `multipart/form-data`: campo `arquivo` (o arquivo) e `alt` opcional (texto, até 200 caracteres). **Não acrescenta a imagem à galeria sozinho** — processa (decodifica de verdade com Pillow, não confia em extensão/Content-Type; redimensiona pro tamanho grande do catálogo; converte pra WebP), grava em disco e responde **201** com `{ "url": "...", "alt": "..." }` — a MESMA forma de um item de `imagens` do endpoint acima. A tela chama esse endpoint pra obter a URL e depois manda o `POST /imagens` de sempre com ela, como faria com uma URL digitada à mão; as duas etapas ficam separadas de propósito, pra não duplicar a regra de limite/ordem/capa numa segunda rota. 400 `DADOS_INVALIDOS` (campo `arquivo`) se o arquivo não abrir como imagem ou passar do tamanho máximo (15 MB); 404 se o produto não existe.
 - **`PATCH /api/v1/admin/produtos/:id/imagens/ordem`** — recebe a lista COMPLETA de ids na ordem desejada: `{ "ids": [12, 10, 11] }`. Lista parcial ou com imagem de outro produto é **400** — reordenar metade deixaria a outra metade com ordem duplicada. Responde com a galeria na ordem nova.
 - **`DELETE /api/v1/admin/imagens/:id`** — apaga uma imagem (sem o produto na URL, como o contrato define) e responde com as imagens que sobraram.
 - **A ordem é sempre 1..N contígua, e a imagem de ordem 1 é a CAPA** — a que aparece na grade do site. Apagar a capa promove a seguinte automaticamente; apagar do meio fecha o buraco. Como as três rotas devolvem a galeria já acertada, a tela não precisa recalcular nada nem recarregar o produto.
@@ -189,6 +190,8 @@ Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que mud
   **No máximo 4 banners ATIVOS** — é o carrossel contratado (proposta, item 2.1). A quinta ativação devolve **400** dizendo o limite, seja no `POST` com `ativo: true`, seja no `PATCH`. Banner **inativo não tem teto**: é rascunho e pode existir aos montes. Reenviar `ativo: true` num banner que já está ativo não conta como nova ativação, então a tela pode mandar o formulário inteiro sem medo.
 
   A ordem é 1..N contígua, como nas imagens do produto: `PATCH /admin/banners/ordem` recebe a lista COMPLETA de ids e o `DELETE` renumera o que sobrou. `GET /home` devolve só os ativos, nessa ordem.
+
+- **`POST /api/v1/admin/banners/upload`** — upload de arquivo (revisão upload de imagem), mesmo formato e mesmas regras do upload de imagem de produto acima: `multipart/form-data` (`arquivo` + `alt` opcional), processa e grava em disco, responde **201** com `{ "url": "...", "alt": "..." }`. Não existe banner ainda nesta etapa — a tela usa a URL devolvida para preencher `imagemUrl` ou `imagemUrlMobile` do formulário e segue para o `POST`/`PATCH /banners` de sempre.
 
 ## Painel administrativo — destaques e consultas (tarefas 58 e 60)
 

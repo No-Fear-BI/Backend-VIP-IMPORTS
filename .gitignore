@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .env
+
+# Upload de imagem do painel (IMAGENS_DIR, configuracao.py) — fica no volume
+# Docker em desenvolvimento; nunca deveria ir pro repositório.
+/dados/

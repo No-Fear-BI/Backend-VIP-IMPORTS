@@ -5,7 +5,7 @@ protegido de rotas/admin_painel.py, e herda de lá o `Depends(exigir_admin)` do
 grupo. Nenhuma rota daqui vai para a lista de exceções da varredura.
 """
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, File, Form, Path, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from vip_api.banco import obter_sessao
@@ -20,6 +20,7 @@ from vip_api.esquemas.admin_produto import (
     VariacaoAdmin,
 )
 from vip_api.esquemas.admin_midia import (
+    ImagemUploadSaida,
     ImagensEntrada,
     OrdemEntrada,
     VariacoesEntrada,
@@ -39,7 +40,9 @@ from vip_api.servicos.admin_produtos import (
     listar_produtos,
     obter_produto,
 )
+from vip_api.servicos.admin_upload import upload_imagem_produto
 from vip_api.servicos.admin_variacoes import definir_variacoes
+from vip_api.servicos.imagens_processamento import TAMANHO_MAXIMO_ARQUIVO
 
 roteador = APIRouter(prefix="/produtos", tags=["admin"])
 
@@ -139,6 +142,22 @@ def imagens_acrescentar(
     """Devolve a galeria inteira, já renumerada — a tela não precisa recarregar
     o produto para saber a ordem e a capa que ficaram."""
     return adicionar_imagens(sessao, produto_id, corpo.imagens)
+
+
+@roteador.post("/{produtoId}/imagens/upload", response_model=ImagemUploadSaida, status_code=201)
+def imagens_upload(
+    arquivo: UploadFile = File(...),
+    alt: str | None = Form(None, max_length=200),
+    produto_id: int = Path(alias="produtoId"),
+    sessao: Session = Depends(obter_sessao),
+) -> ImagemUploadSaida:
+    """Processa o arquivo e grava em disco — NÃO acrescenta à galeria
+    sozinho. Devolve `{url, alt}` para a tela chamar `POST /imagens` (o de
+    sempre, por URL) com o resultado, exatamente como faria com uma URL
+    digitada à mão."""
+    dados = arquivo.file.read(TAMANHO_MAXIMO_ARQUIVO + 1)
+    url, alt_final = upload_imagem_produto(sessao, produto_id, dados, alt)
+    return ImagemUploadSaida(url=url, alt=alt_final)
 
 
 @roteador.patch("/{produtoId}/imagens/ordem", response_model=list[ImagemDetalhe])
