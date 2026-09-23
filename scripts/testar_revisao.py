@@ -1,4 +1,9 @@
-﻿"""Testes isolados da revisão, sem PostgreSQL: python scripts/testar_revisao.py."""
+﻿"""Testes isolados da revisão, sem PostgreSQL: python scripts/testar_revisao.py.
+
+Só cobre `pendentes` (paginação/filtro) e a decisão `rejected` — nenhuma das
+duas toca marca/categoria/produto. A decisão `approved` agora cria um produto
+de verdade (marca/categoria/coleção, imagem, tabelas que este SQLite mínimo
+não tem); a cobertura dela é testes/teste_admin_revisao.py, com Postgres."""
 import json
 import os
 import tempfile
@@ -13,6 +18,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 from vip_api.rotas import admin_revisao as revisao
 from vip_api.modelos.revisao import DecisaoRevisao
+from vip_api.erros.excecoes import AppError
+from vip_api.erros.manipuladores import tratar_app_error
 
 class RevisaoTeste(unittest.TestCase):
     def setUp(self):
@@ -24,6 +31,7 @@ class RevisaoTeste(unittest.TestCase):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         DecisaoRevisao.__table__.create(self.engine)
         self.app = FastAPI()
+        self.app.add_exception_handler(AppError, tratar_app_error)
         self.app.include_router(revisao.roteador)
         def sessao():
             with Session(self.engine) as db:
@@ -54,8 +62,8 @@ class RevisaoTeste(unittest.TestCase):
         self.assertEqual(self.cliente.get('/revisao/pendentes?pagina=0').status_code, 422)
         self.assertEqual(self.cliente.get('/revisao/pendentes?porPagina=101').status_code, 422)
 
-    def test_decisao_reimportacao_e_reposicao(self):
-        resposta = self.cliente.post('/revisao', json={'productId': 'qwer888-0', 'status': 'approved', 'translatedName': 'Camisa revisada'})
+    def test_rejeicao_reimportacao_e_reposicao(self):
+        resposta = self.cliente.post('/revisao', json={'productId': 'qwer888-0', 'status': 'rejected'})
         self.assertEqual(resposta.status_code, 200)
         fila = self.cliente.get('/revisao/pendentes').json()
         self.assertEqual(fila['total'], 124)
@@ -65,9 +73,15 @@ class RevisaoTeste(unittest.TestCase):
         self.gravar()
         fila = self.cliente.get('/revisao/pendentes?busca=Novo').json()
         self.assertEqual(fila['total'], 1)
-        self.assertEqual(self.cliente.get('/revisao/publicados').json()[0]['name'], 'Camisa revisada')
         self.assertEqual(self.cliente.post('/revisao', json={'productId': 'qwer888-novo', 'status': 'rejected'}).status_code, 200)
         self.assertEqual(self.cliente.get('/revisao/pendentes?busca=Novo').json()['total'], 0)
+
+    def test_aprovar_sem_marca_ou_colecao_recusa_sem_tocar_o_catalogo(self):
+        resposta = self.cliente.post('/revisao', json={'productId': 'qwer888-0', 'status': 'approved'})
+        self.assertEqual(resposta.status_code, 400)
+        campos = resposta.json()['erro']['campos']
+        self.assertIn('marca', campos)
+        self.assertIn('colecao', campos)
 
 if __name__ == '__main__':
     unittest.main()

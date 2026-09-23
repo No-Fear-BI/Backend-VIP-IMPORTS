@@ -137,41 +137,18 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from sqlalchemy import delete, select  # noqa: E402
-from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from vip_api.banco import SessaoLocal  # noqa: E402
-from vip_api.modelos.catalogo import (  # noqa: E402
-    Categoria,
-    Colecao,
-    Cor,
-    Marca,
-    Produto,
-    ProdutoImagem,
-    ProdutoVariacao,
-)
-from vip_api.servicos.imagens_processamento import (  # noqa: E402
-    LADO_GRANDE,
-    QUALIDADE_WEBP,
-    abrir_imagem,
-    redimensionado,
-)
-from vip_api.texto import gerar_slug, normalizar  # noqa: E402
+from vip_api.modelos.catalogo import Categoria, Colecao, Marca  # noqa: E402
+from vip_api.servicos.imagens_processamento import abrir_imagem  # noqa: E402
+from vip_api.texto import normalizar  # noqa: E402
 
-# Reaproveita a mecânica de código (tarefa 71) já usada pelo painel, em vez de
-# reinventar: mesmo prefixo por marca (o que a marca já usa, se já tem peça
-# no catálogo — sintética inclusive), mesma retentativa em SAVEPOINT na
-# colisão de sequencial. Só o commit final é diferente: aqui quem decide
-# quando confirmar é o laço de importação (uma linha = uma transação inteira,
-# produto + imagens + variações juntos), não esta função sozinha.
-from vip_api.servicos.admin_produtos import (  # noqa: E402
-    TENTATIVAS_DE_CODIGO,
-    _e_colisao_de_codigo,
-    _prefixo_da_marca,
-    _proximo_sequencial,
-)
-from vip_api.servicos.admin_variacoes import obter_ou_criar_cor  # noqa: E402
+# Núcleo (marca/categoria por slug, código do produto, imagem em WebP,
+# produto+imagens+variações) compartilhado com a aprovação da fila do Yupoo
+# (vip_api.rotas.admin_revisao) — ver docstring de
+# vip_api.servicos.importacao_catalogo para o motivo de ser uma função só.
+from vip_api.servicos.importacao_catalogo import importar_produto  # noqa: E402
 
 COLUNAS_OBRIGATORIAS = [
     "codigo_origem",
@@ -190,10 +167,6 @@ COLUNAS_OBRIGATORIAS = [
 COLUNAS_FOTO = ["foto_1", "foto_2", "foto_3"]
 SEPARADOR_LISTA = ";"  # dentro de cores — tamanhos tem separador próprio, ver _dividir_tamanhos
 
-# LADO_GRANDE e QUALIDADE_WEBP vêm de vip_api.servicos.imagens_processamento
-# (compartilhado com o upload do painel). LADO_MINIATURA é só desta
-# importação em lote — o upload ao vivo não gera miniatura.
-LADO_MINIATURA = 400
 TAMANHO_MAXIMO_FOTO = 15 * 1024 * 1024  # 15 MB: acima disso é fornecedor mandando coisa errada
 
 
@@ -310,97 +283,9 @@ def _validar_tamanho(valor: str, maximo: int, campo: str) -> str:
 
 
 # ======================================================================
-# Marca / categoria / coleção — obter ou criar
-# ======================================================================
-
-
-def _obter_ou_criar_marca(sessao: Session, nome_csv: str, cache: dict[str, Marca]) -> Marca:
-    nome_csv = _validar_tamanho(nome_csv, 80, "marca")
-    slug = gerar_slug(nome_csv)
-    if not slug:
-        raise ValueError(f"marca {nome_csv!r} não vira um slug válido.")
-    if slug in cache:
-        return cache[slug]
-
-    existente = sessao.scalar(select(Marca).where(Marca.slug == slug))
-    if existente:
-        cache[slug] = existente
-        return existente
-
-    nova = Marca(nome=nome_csv, slug=slug)
-    sessao.add(nova)
-    sessao.flush()  # precisa do id antes de qualquer produto referenciar marca_id
-    cache[slug] = nova
-    return nova
-
-
-def _obter_colecao(sessao: Session, valor_csv: str, cache: dict[str, Colecao]) -> Colecao:
-    slug = gerar_slug(valor_csv)
-    if slug in cache:
-        return cache[slug]
-
-    colecao = sessao.scalar(select(Colecao).where(Colecao.slug == slug))
-    if not colecao:
-        raise ValueError(
-            f"colecao {valor_csv!r} não existe. Só 'feminino' e 'masculino' — "
-            "este script não cria coleção nova (são só duas, fixas)."
-        )
-    cache[slug] = colecao
-    return colecao
-
-
-def _obter_ou_criar_categoria(
-    sessao: Session, colecao: Colecao, nome_csv: str, cache: dict[tuple[int, str], Categoria]
-) -> Categoria:
-    nome_csv = _validar_tamanho(nome_csv, 80, "categoria")
-    slug = gerar_slug(nome_csv)
-    if not slug:
-        raise ValueError(f"categoria {nome_csv!r} não vira um slug válido.")
-    chave = (colecao.id, slug)
-    if chave in cache:
-        return cache[chave]
-
-    existente = sessao.scalar(
-        select(Categoria).where(Categoria.colecao_id == colecao.id, Categoria.slug == slug)
-    )
-    if existente:
-        cache[chave] = existente
-        return existente
-
-    nova = Categoria(colecao_id=colecao.id, nome=nome_csv, slug=slug)
-    sessao.add(nova)
-    sessao.flush()
-    cache[chave] = nova
-    return nova
-
-
-# ======================================================================
-# Código do produto (reaproveita admin_produtos, tarefa 71 — ver comentário
-# de import no topo do arquivo)
-# ======================================================================
-
-
-def _atribuir_codigo(sessao: Session, produto: Produto, prefixo: str) -> None:
-    sequencial = _proximo_sequencial(sessao, prefixo)
-    for tentativa in range(TENTATIVAS_DE_CODIGO):
-        produto.codigo = f"{prefixo}-{sequencial + tentativa:04d}"
-        try:
-            with sessao.begin_nested():
-                sessao.add(produto)
-                sessao.flush()
-        except IntegrityError as erro:
-            if not _e_colisao_de_codigo(erro):
-                raise
-            continue
-        return
-    raise RuntimeError(
-        f"não consegui gerar código para o prefixo {prefixo!r} depois de "
-        f"{TENTATIVAS_DE_CODIGO} tentativas — muita coisa disputando o mesmo prefixo."
-    )
-
-
-# ======================================================================
-# Imagens: baixar, redimensionar, salvar em WebP
+# Imagens: só o download é deste script — URL do fornecedor, no CSV. Resize,
+# WebP e a gravação em disco são de vip_api.servicos.importacao_catalogo,
+# compartilhados com a aprovação da fila do Yupoo.
 # ======================================================================
 
 
@@ -419,34 +304,6 @@ def _baixar_imagem(url: str) -> Image.Image:
         return abrir_imagem(dados)
     except ValueError as erro:
         raise ValueError(f"{url} não é uma imagem que dá para abrir.") from erro
-
-
-def _processar_fotos(
-    urls_origem: list[str], codigo_origem: str, nome_produto: str, saida_dir: Path, url_base: str
-) -> list[tuple[str, str]]:
-    """Baixa cada URL, salva grande (1200px) e miniatura (400px) em WebP, e
-    devolve [(url_final, alt), ...] na mesma ordem — url_final é o que entra
-    em produto_imagens.url."""
-    pasta_slug = gerar_slug(codigo_origem) or "produto"
-    pasta = saida_dir / pasta_slug
-    resultado: list[tuple[str, str]] = []
-
-    for ordem, url_origem in enumerate(urls_origem, start=1):
-        imagem = _baixar_imagem(url_origem)
-        grande = redimensionado(imagem, LADO_GRANDE)
-        miniatura = redimensionado(imagem, LADO_MINIATURA)
-
-        pasta.mkdir(parents=True, exist_ok=True)
-        caminho_grande = pasta / f"{ordem}.webp"
-        caminho_miniatura = pasta / f"{ordem}-miniatura.webp"
-        grande.save(caminho_grande, format="WEBP", quality=QUALIDADE_WEBP, method=6)
-        miniatura.save(caminho_miniatura, format="WEBP", quality=QUALIDADE_WEBP, method=6)
-
-        url_final = f"{url_base.rstrip('/')}/{pasta_slug}/{ordem}.webp"
-        alt = _validar_tamanho(f"{nome_produto} — foto {ordem}", 200, "alt da imagem")
-        resultado.append((url_final, alt))
-
-    return resultado
 
 
 # ======================================================================
@@ -513,92 +370,30 @@ def _importar_linha(
             "não estão definidas no ambiente."
         )
 
-    colecao = _obter_colecao(sessao, valor_colecao, cache_colecoes)
-    marca = _obter_ou_criar_marca(sessao, nome_marca, cache_marcas)
-    categoria = _obter_ou_criar_categoria(sessao, colecao, nome_categoria, cache_categorias)
+    # Baixa ANTES de tocar o produto: se uma URL falhar, a linha falha sem
+    # ter mexido em nada do banco ainda. Resize/WebP/gravação em disco e a
+    # criação do produto (marca/categoria por slug, código, imagens,
+    # variações) são o núcleo compartilhado com a aprovação do Yupoo.
+    imagens = [_baixar_imagem(url) for url in urls_foto]
 
-    # Processa as fotos ANTES de tocar o produto: se uma URL falhar, a linha
-    # falha sem ter mexido em nada do banco ainda (além de marca/categoria,
-    # que são dado compartilhado e válido mesmo se ESTA linha falhar depois).
-    imagens_processadas = (
-        _processar_fotos(urls_foto, codigo_origem, nome, saida_dir, url_base) if urls_foto else []
+    _, criando = importar_produto(
+        sessao,
+        codigo_origem=codigo_origem,
+        nome=nome,
+        descricao=descricao,
+        nome_marca=_validar_tamanho(nome_marca, 80, "marca"),
+        nome_categoria=_validar_tamanho(nome_categoria, 80, "categoria"),
+        valor_colecao=valor_colecao,
+        origem_url=origem_url,
+        tamanhos=tamanhos,
+        cores=cores,
+        imagens=imagens,
+        saida_dir=saida_dir,
+        url_base=url_base,
+        cache_marcas=cache_marcas,
+        cache_colecoes=cache_colecoes,
+        cache_categorias=cache_categorias,
     )
-
-    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == codigo_origem))
-    criando = produto is None
-
-    if criando:
-        # Todos os campos NOT NULL entram no construtor: _atribuir_codigo faz
-        # o INSERT de verdade (add()+flush()) logo abaixo, e se `nome`,
-        # `marca_id`, `categoria_id` ou `colecao_id` estiverem faltando nesse
-        # instante o banco recusa a linha inteira na hora — antes preencher
-        # DEPOIS do INSERT fazia o primeiro INSERT falhar sempre, por nome
-        # nulo, e nunca dava pra saber se o resto da linha estava certo.
-        produto = Produto(
-            codigo_origem=codigo_origem,
-            origem_url=origem_url,
-            nome=nome,
-            descricao=descricao,
-            marca_id=marca.id,
-            categoria_id=categoria.id,
-            colecao_id=colecao.id,
-        )
-        prefixo = _prefixo_da_marca(sessao, marca.id)
-        _atribuir_codigo(sessao, produto, prefixo)  # já dá add()+flush(); produto.id existe daqui pra frente
-    else:
-        # Produto já existe: apaga o conjunto antigo de imagens/variações
-        # ANTES de inserir o novo. Precisa ser nesta ordem — não só ORM
-        # .clear()+.append() — por causa do índice único parcial da capa
-        # (uq_produto_imagens_capa), que não é adiável como o de ordem
-        # (docs/modelagem-banco.md 4.5): se a inserção da nova capa
-        # acontecesse antes da exclusão da capa antiga, o banco recusaria no
-        # meio da própria linha. Apagar tudo primeiro evita o problema by
-        # design, em vez de depender da ordem de flush do SQLAlchemy.
-        sessao.execute(delete(ProdutoImagem).where(ProdutoImagem.produto_id == produto.id))
-        sessao.execute(delete(ProdutoVariacao).where(ProdutoVariacao.produto_id == produto.id))
-        sessao.flush()
-
-        produto.nome = nome
-        produto.descricao = descricao
-        produto.origem_url = origem_url
-        produto.marca_id = marca.id
-        produto.categoria_id = categoria.id
-        produto.colecao_id = colecao.id
-        # codigo e codigo_origem NUNCA mudam numa atualização: codigo é o
-        # identificador público (URL /produto/:codigo) já divulgado, e
-        # codigo_origem é a própria chave que achou este produto.
-
-    for ordem, valor in enumerate(tamanhos, start=1):
-        sessao.add(
-            ProdutoVariacao(produto_id=produto.id, tipo="tamanho", valor=valor, disponivel=True, ordem=ordem)
-        )
-    # A coluna `cores` da planilha é texto livre; obter_ou_criar_cor
-    # transforma em linha do vocabulário (revisão 0007), criando a cor que
-    # faltar e reaproveitando a de mesmo slug. Sem cor_id, a CHECK recusa a
-    # linha. "Preto;preto" na MESMA célula cai na mesma cor: fica a primeira,
-    # senão a UNIQUE (produto, tipo, valor) derrubaria a linha inteira.
-    cores_da_linha: list[Cor] = []
-    for valor in cores:
-        cor = obter_ou_criar_cor(sessao, valor)
-        if cor not in cores_da_linha:
-            cores_da_linha.append(cor)
-    for ordem, cor in enumerate(cores_da_linha, start=1):
-        sessao.add(
-            ProdutoVariacao(
-                produto_id=produto.id,
-                tipo="cor",
-                valor=cor.nome,
-                cor_id=cor.id,
-                disponivel=True,
-                ordem=ordem,
-            )
-        )
-    for ordem, (url_final, alt) in enumerate(imagens_processadas, start=1):
-        sessao.add(
-            ProdutoImagem(produto_id=produto.id, url=url_final, alt=alt, ordem=ordem, capa=(ordem == 1))
-        )
-
-    sessao.flush()
     return criando
 
 

@@ -1,19 +1,45 @@
-"""Fila interna de aprovação dos produtos importados dos fornecedores."""
+"""Fila interna de aprovação dos produtos importados dos fornecedores.
+
+Aprovar um álbum (POST, status='approved') cria — ou, se o mesmo álbum já
+tiver sido aprovado antes, ATUALIZA — um PRODUTO DE VERDADE no catálogo,
+navegável na loja, pela mesma mecânica de scripts/importar_catalogo.py
+(marca/categoria por slug, imagem baixada e convertida pra WebP, variações):
+ver vip_api.servicos.importacao_catalogo.importar_produto, reaproveitada
+aqui em vez de duplicada. Antes desta função existir, aprovar só gravava
+nesta tabela de revisão (DecisaoRevisao) — uma fila paralela que nenhuma
+tela pública lia.
+
+`supplier` e `sourceUrl` são o fornecedor e o link do álbum no Yupoo — dado
+interno, só de rastreabilidade (nunca serializado em rota pública, igual ao
+resto do catálogo real: ver docs/modelagem-banco.md 4.4). NUNCA viram marca:
+marca e coleção não vêm do Yupoo (não tem essa informação), então é o admin
+quem escolhe as duas na hora de aprovar.
+
+Este roteador inteiro só existe montado dentro de admin_painel.roteador, que
+já exige sessão de admin no grupo (`Depends(exigir_admin)`) — não precisa (e
+não deve) repetir a dependência rota a rota aqui.
+"""
 import json
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from vip_api.banco import obter_sessao
+from vip_api.configuracao import configuracao
 from vip_api.erros.excecoes import AppError
 from vip_api.modelos.revisao import DecisaoRevisao
+from vip_api.servicos.imagens_processamento import abrir_imagem
+from vip_api.servicos.importacao_catalogo import importar_produto
 
 roteador = APIRouter(prefix='/revisao', tags=['admin'])
 _arquivo = Path(__file__).resolve().parents[3] / 'data' / 'pending-products.json'
+TAMANHO_MAXIMO_FOTO = 15 * 1024 * 1024  # 15 MB — mesmo teto de scripts/importar_catalogo.py
 
 @lru_cache(maxsize=1)
 def _ler_catalogo(versao):
@@ -31,7 +57,37 @@ def traduzir(p):
     cor=next((x for termos,x in ((('black',),'preta'),(('white',),'branca'),(('blue',),'azul'),(('green',),'verde'),(('red',),'vermelha'),(('brown',),'marrom')) if any(t in n.lower() for t in termos)),None)
     detalhes=([f'Cor: {cor}'] if cor else [])+[f"Referência: {p['id'].split('-',1)[1]}"]
     return {'translatedName':n if p['category']=='A classificar' else ' '.join([_singular.get(p['category'],p['category']),*list(dict.fromkeys(d))[:2]]),'translatedDetails':' • '.join(detalhes)}
-class Decisao(BaseModel): productId:str; status:str; translatedName:str|None=None
+
+def _baixar_foto_yupoo(url: str, source: str):
+    """Baixa a foto do álbum — precisa do mesmo `Referer` que /revisao/imagem
+    usa (hotlink protection do Yupoo), senão a origem recusa a requisição."""
+    u, s = urlparse(url), urlparse(source)
+    if u.scheme != 'https' or u.hostname != 'photo.yupoo.com' or s.scheme != 'https' or not (s.hostname or '').endswith('.x.yupoo.com'):
+        raise AppError('ORIGEM_NAO_PERMITIDA', 'Origem não permitida.', 403)
+    try:
+        with urlopen(Request(url, headers={'Referer': source, 'User-Agent': 'Mozilla/5.0 (compatible; VIPImportsCatalog/1.0)'}), timeout=15) as remoto:
+            dados = remoto.read(TAMANHO_MAXIMO_FOTO + 1)
+    except AppError:
+        raise
+    except Exception as exc:
+        raise AppError('IMAGEM_INDISPONIVEL', 'Imagem indisponível.', 502) from exc
+    if len(dados) > TAMANHO_MAXIMO_FOTO:
+        raise AppError('IMAGEM_INDISPONIVEL', 'Imagem indisponível.', 502)
+    try:
+        return abrir_imagem(dados)
+    except ValueError as exc:
+        raise AppError('IMAGEM_INDISPONIVEL', 'Imagem indisponível.', 502) from exc
+
+class Decisao(BaseModel):
+    productId: str
+    status: str
+    translatedName: str | None = None
+    # Só fazem sentido (e só são exigidos) quando status == 'approved': o
+    # Yupoo não manda marca nem coleção — o admin escolhe as duas ao aprovar.
+    # NUNCA vem de `supplier`/`p['category']` sozinho, ver docstring do módulo.
+    marca: str | None = None
+    colecao: str | None = None
+
 @roteador.get('/pendentes')
 def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por_pagina:int=Query(60,alias='porPagina',ge=1,le=100), sessao:Session=Depends(obter_sessao)):
     dados, _ = _catalogo()
@@ -40,17 +96,66 @@ def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por
     paginas=max(1,(len(filtrados)+por_pagina-1)//por_pagina)
     pagina=min(pagina,paginas); inicio=(pagina-1)*por_pagina
     return {'items':[dict(p, **traduzir(p)) for p in filtrados[inicio:inicio+por_pagina]],'total':len(filtrados),'categories':sorted({p['category'] for p in fila}),'pagina':pagina,'paginas':paginas,'porPagina':por_pagina}
+
 @roteador.post('')
-def decidir(corpo:Decisao, sessao:Session=Depends(obter_sessao)):
-    if corpo.status not in {'approved','rejected'}: raise AppError('DECISAO_INVALIDA','Decisão inválida.',400)
+def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
+    if corpo.status not in {'approved', 'rejected'}:
+        raise AppError('DECISAO_INVALIDA', 'Decisão inválida.', 400)
     _, por_id = _catalogo()
-    p=por_id.get(corpo.productId)
-    if not p: raise AppError('PRODUTO_NAO_ENCONTRADO','Produto não encontrado.',404)
-    t=traduzir(p); existente=sessao.get(DecisaoRevisao,p['id']); valores=dict(status=corpo.status,translated_name=(corpo.translatedName or '').strip() or t['translatedName'],translated_details=t['translatedDetails'],original_name=p['name'],category=p['category'],supplier=p['supplier'],image=p['image'],source_url=p['sourceUrl'])
+    p = por_id.get(corpo.productId)
+    if not p:
+        raise AppError('PRODUTO_NAO_ENCONTRADO', 'Produto não encontrado.', 404)
+
+    t = traduzir(p)
+    nome = ((corpo.translatedName or '').strip() or t['translatedName'])[:180]
+
+    if corpo.status == 'approved':
+        marca = (corpo.marca or '').strip()
+        colecao = (corpo.colecao or '').strip()
+        campos = {}
+        if not marca:
+            campos['marca'] = 'Escolha a marca do produto.'
+        if colecao not in {'feminino', 'masculino'}:
+            campos['colecao'] = 'Escolha feminino ou masculino.'
+        if campos:
+            raise AppError('DADOS_INVALIDOS', 'Confira os campos destacados.', 400, campos=campos)
+
+        imagem = _baixar_foto_yupoo(p['image'], p['sourceUrl'])
+        try:
+            importar_produto(
+                sessao,
+                codigo_origem=p['id'],
+                nome=nome,
+                descricao=None,
+                nome_marca=marca[:80],
+                nome_categoria=_singular.get(p['category'], p['category'])[:80],
+                valor_colecao=colecao,
+                origem_url=p['sourceUrl'],
+                tamanhos=[],
+                cores=[],
+                imagens=[imagem],
+                saida_dir=Path(configuracao.IMAGENS_DIR),
+                url_base=configuracao.IMAGENS_URL_BASE,
+                cache_marcas={},
+                cache_colecoes={},
+                cache_categorias={},
+                # `p['id']` é "<fornecedor>-<id do álbum>" — pasta_imagens
+                # usa só o número: a pasta pública nunca carrega o nome do
+                # fornecedor, mesmo indiretamente pela URL da foto.
+                pasta_imagens=p['id'].rsplit('-', 1)[-1],
+            )
+        except ValueError as exc:
+            raise AppError('DADOS_INVALIDOS', str(exc), 400) from exc
+
+    existente = sessao.get(DecisaoRevisao, p['id'])
+    valores = dict(status=corpo.status, translated_name=nome, translated_details=t['translatedDetails'], original_name=p['name'], category=p['category'], supplier=p['supplier'], image=p['image'], source_url=p['sourceUrl'])
     if existente:
-        for k,v in valores.items(): setattr(existente,k,v)
-    else: sessao.add(DecisaoRevisao(product_id=p['id'],**valores))
-    sessao.commit(); return {'ok':True,'product':dict(p,**t)}
+        for k, v in valores.items(): setattr(existente, k, v)
+    else:
+        sessao.add(DecisaoRevisao(product_id=p['id'], **valores))
+    sessao.commit()
+    return {'ok': True, 'product': dict(p, **t)}
+
 @roteador.delete('')
 def desfazer(produto_id:str=Query(alias='produtoId'),sessao:Session=Depends(obter_sessao)):
     item=sessao.get(DecisaoRevisao,produto_id)
