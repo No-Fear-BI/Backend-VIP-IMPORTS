@@ -11,6 +11,7 @@ from vip_api.erros.codigos import COLECAO_NAO_ENCONTRADA
 from vip_api.erros.excecoes import AppError
 from vip_api.esquemas.navegacao import CategoriaItem, ColecaoItem, CorItem, MarcaItem
 from vip_api.modelos.catalogo import Categoria, Colecao, Cor, Marca, Produto, ProdutoVariacao
+from vip_api.servicos.produto_destinos import pertence_categoria
 
 # `status <> 'oculto'` vive DENTRO do ON do LEFT JOIN, não no WHERE. No WHERE
 # ele descartaria a linha inteira da marca sem produto visível, e "Goyard (0)"
@@ -102,7 +103,7 @@ def listar_categorias_da_colecao(sessao: Session, slug_colecao: str) -> list[Cat
             Categoria.imagem_url,
             func.count(Produto.id).label("total_produtos"),
         )
-        .outerjoin(Produto, (Produto.categoria_id == Categoria.id) & _VISIVEL)
+        .outerjoin(Produto, pertence_categoria(Categoria.id) & _VISIVEL)
         .where(Categoria.colecao_id == colecao_id, Categoria.ativa.is_(True))
         .group_by(Categoria.id)
         .order_by(Categoria.ordem.asc(), Categoria.nome.asc())

@@ -9,6 +9,7 @@ from vip_api.modelos.acesso import AcessoConfig, AcessoSolicitacao
 from vip_api.modelos.acesso_tentativas import TentativaAcesso
 from vip_api.modelos.admin import Administrador, AdminSessao
 from vip_api.modelos.revisao import DecisaoRevisao
+from vip_api.modelos.produto_destinos import ProdutoCategoriaAdicional
 from vip_api.modelos.base import Base
 from vip_api.modelos.catalogo import (
     Banner,

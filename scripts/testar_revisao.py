@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 os.environ['DATABASE_URL'] = 'sqlite://'
@@ -16,6 +17,10 @@ from vip_api.modelos.revisao import DecisaoRevisao
 
 class RevisaoTeste(unittest.TestCase):
     def setUp(self):
+        # Lock e publicacao reais: testes/teste_revisao_publicacao.py (PostgreSQL).
+        self.lock = patch.object(revisao, 'travar_revisao', return_value=None)
+        self.lock.start()
+        self.addCleanup(self.lock.stop)
         self.original = revisao._arquivo
         self.pasta = tempfile.TemporaryDirectory()
         revisao._arquivo = Path(self.pasta.name) / 'catalogo.json'
@@ -55,7 +60,7 @@ class RevisaoTeste(unittest.TestCase):
         self.assertEqual(self.cliente.get('/revisao/pendentes?porPagina=101').status_code, 422)
 
     def test_decisao_reimportacao_e_reposicao(self):
-        resposta = self.cliente.post('/revisao', json={'productId': 'qwer888-0', 'status': 'approved', 'translatedName': 'Camisa revisada'})
+        resposta = self.cliente.post('/revisao', json={'productId': 'qwer888-0', 'status': 'rejected', 'translatedName': 'Camisa revisada'})
         self.assertEqual(resposta.status_code, 200)
         fila = self.cliente.get('/revisao/pendentes').json()
         self.assertEqual(fila['total'], 124)
@@ -65,7 +70,7 @@ class RevisaoTeste(unittest.TestCase):
         self.gravar()
         fila = self.cliente.get('/revisao/pendentes?busca=Novo').json()
         self.assertEqual(fila['total'], 1)
-        self.assertEqual(self.cliente.get('/revisao/publicados').json()[0]['name'], 'Camisa revisada')
+        self.assertEqual(self.cliente.get('/revisao/publicados').json(), [])
         self.assertEqual(self.cliente.post('/revisao', json={'productId': 'qwer888-novo', 'status': 'rejected'}).status_code, 200)
         self.assertEqual(self.cliente.get('/revisao/pendentes?busca=Novo').json()['total'], 0)
 

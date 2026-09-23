@@ -70,6 +70,7 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     marca_id: int
     categoria_id: int
     colecao_id: int
+    categorias_ids: list[int] = []
     marca: Referencia
     categoria: Referencia
     colecao: Referencia
@@ -106,6 +107,7 @@ class ProdutoEditar(EsquemaEntrada):
     destaque_ordem: int | None = None
     marca_id: int | None = None
     categoria_id: int | None = None
+    categorias_ids: list[int] | None = Field(None, min_length=1, max_length=2)
 
 
 class LoteEntrada(EsquemaEntrada):

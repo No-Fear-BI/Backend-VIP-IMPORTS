@@ -41,6 +41,7 @@ from vip_api.esquemas.admin_catalogo import (
     CategoriaEditar,
 )
 from vip_api.modelos.catalogo import Categoria, Colecao, Produto
+from vip_api.servicos.produto_destinos import pertence_categoria
 from vip_api.texto import gerar_slug
 
 TENTATIVAS_DE_SLUG = 50
@@ -108,9 +109,10 @@ def _total_por_categoria(sessao: Session, ids: list[int]) -> dict[int, int]:
     if not ids:
         return {}
     linhas = sessao.execute(
-        select(Produto.categoria_id, func.count())
-        .where(Produto.categoria_id.in_(ids))
-        .group_by(Produto.categoria_id)
+        select(Categoria.id, func.count(Produto.id))
+        .join(Produto, pertence_categoria(Categoria.id))
+        .where(Categoria.id.in_(ids))
+        .group_by(Categoria.id)
     ).all()
     return {categoria_id: total for categoria_id, total in linhas}
 
@@ -213,7 +215,7 @@ def editar_categoria(
         total = sessao.scalar(
             select(func.count())
             .select_from(Produto)
-            .where(Produto.categoria_id == categoria.id)
+            .where(pertence_categoria(categoria.id))
         )
         if total:
             raise AppError(
@@ -267,7 +269,7 @@ def excluir_categoria(sessao: Session, categoria_id: int) -> None:
     total = sessao.scalar(
         select(func.count())
         .select_from(Produto)
-        .where(Produto.categoria_id == categoria.id)
+        .where(pertence_categoria(categoria.id))
     )
     if total:
         raise AppError(

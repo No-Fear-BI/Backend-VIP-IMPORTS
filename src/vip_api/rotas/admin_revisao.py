@@ -5,12 +5,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from vip_api.banco import obter_sessao
 from vip_api.erros.excecoes import AppError
 from vip_api.modelos.revisao import DecisaoRevisao
+from vip_api.servicos.revisao_publicacao import publicar, ocultar, travar_revisao
 
 roteador = APIRouter(prefix='/revisao', tags=['admin'])
 _arquivo = Path(__file__).resolve().parents[3] / 'data' / 'pending-products.json'
@@ -31,7 +32,13 @@ def traduzir(p):
     cor=next((x for termos,x in ((('black',),'preta'),(('white',),'branca'),(('blue',),'azul'),(('green',),'verde'),(('red',),'vermelha'),(('brown',),'marrom')) if any(t in n.lower() for t in termos)),None)
     detalhes=([f'Cor: {cor}'] if cor else [])+[f"Referência: {p['id'].split('-',1)[1]}"]
     return {'translatedName':n if p['category']=='A classificar' else ' '.join([_singular.get(p['category'],p['category']),*list(dict.fromkeys(d))[:2]]),'translatedDetails':' • '.join(detalhes)}
-class Decisao(BaseModel): productId:str; status:str; translatedName:str|None=None
+class Decisao(BaseModel):
+    productId: str = Field(min_length=1, max_length=80)
+    status: str
+    translatedName: str | None = Field(default=None, max_length=180)
+    categoriaId: int | None = Field(default=None, gt=0)
+    categoriasIds: list[int] | None = Field(default=None, min_length=1, max_length=2)
+    marcaId: int | None = Field(default=None, gt=0)
 @roteador.get('/pendentes')
 def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por_pagina:int=Query(60,alias='porPagina',ge=1,le=100), sessao:Session=Depends(obter_sessao)):
     dados, _ = _catalogo()
@@ -46,15 +53,33 @@ def decidir(corpo:Decisao, sessao:Session=Depends(obter_sessao)):
     _, por_id = _catalogo()
     p=por_id.get(corpo.productId)
     if not p: raise AppError('PRODUTO_NAO_ENCONTRADO','Produto não encontrado.',404)
+    travar_revisao(sessao, p['id'])
     t=traduzir(p); existente=sessao.get(DecisaoRevisao,p['id']); valores=dict(status=corpo.status,translated_name=(corpo.translatedName or '').strip() or t['translatedName'],translated_details=t['translatedDetails'],original_name=p['name'],category=p['category'],supplier=p['supplier'],image=p['image'],source_url=p['sourceUrl'])
+    produto = None
+    if corpo.status == 'approved':
+        produto = publicar(sessao, p, t, corpo, existente)
+        valores['produto_id'] = produto.id
+        valores['publicado_no_catalogo'] = True
+    else:
+        ocultar(sessao, existente)
     if existente:
         for k,v in valores.items(): setattr(existente,k,v)
     else: sessao.add(DecisaoRevisao(product_id=p['id'],**valores))
-    sessao.commit(); return {'ok':True,'product':dict(p,**t)}
+    sessao.commit()
+    return {
+        'ok': True,
+        'product': {**p, **t, 'translatedName': valores['translated_name']},
+        'produtoId': produto.id if produto else None,
+        'codigo': produto.codigo if produto else None,
+    }
 @roteador.delete('')
 def desfazer(produto_id:str=Query(alias='produtoId'),sessao:Session=Depends(obter_sessao)):
+    travar_revisao(sessao, produto_id)
     item=sessao.get(DecisaoRevisao,produto_id)
-    if item: sessao.delete(item); sessao.commit()
+    if item:
+        ocultar(sessao, item)
+        sessao.delete(item)
+        sessao.commit()
     return {'ok':True}
 @roteador.get('/publicados')
 def publicados(sessao:Session=Depends(obter_sessao)):

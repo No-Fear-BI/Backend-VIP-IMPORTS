@@ -44,6 +44,7 @@ from vip_api.modelos.catalogo import (
     ProdutoImagem,
     ProdutoVariacao,
 )
+from vip_api.modelos.produto_destinos import ProdutoCategoriaAdicional
 from vip_api.servicos.admin_variacoes import remover_variacoes
 from vip_api.texto import normalizar
 
@@ -83,9 +84,11 @@ def _aplicar_filtros(stmt, filtros: FiltrosAdmin):
     if filtros.marca_id is not None:
         stmt = stmt.where(Produto.marca_id == filtros.marca_id)
     if filtros.categoria_id is not None:
-        stmt = stmt.where(Produto.categoria_id == filtros.categoria_id)
+        from vip_api.servicos.produto_destinos import pertence_categoria
+        stmt = stmt.where(pertence_categoria(filtros.categoria_id))
     elif filtros.colecao_id is not None:
-        stmt = stmt.where(Produto.colecao_id == filtros.colecao_id)
+        from vip_api.servicos.produto_destinos import pertence_colecao
+        stmt = stmt.where(pertence_colecao(filtros.colecao_id))
 
     if filtros.cor_id is not None:
         # EXISTS pelo mesmo motivo da vitrine: JOIN repetiria o produto que tem
@@ -250,6 +253,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         .where(ProdutoVariacao.produto_id == produto.id)
         .order_by(ProdutoVariacao.tipo.asc(), ProdutoVariacao.ordem.asc(), ProdutoVariacao.id.asc())
     ).all()
+    categorias_ids = [produto.categoria_id] + list(sessao.scalars(select(ProdutoCategoriaAdicional.categoria_id).where(ProdutoCategoriaAdicional.produto_id == produto.id)))
 
     return ProdutoAdminDetalhe(
         id=produto.id,
@@ -265,6 +269,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         marca=Referencia(nome=cabecalho.marca_nome, slug=cabecalho.marca_slug),
         categoria=Referencia(nome=cabecalho.categoria_nome, slug=cabecalho.categoria_slug),
         colecao=Referencia(nome=cabecalho.colecao_nome, slug=cabecalho.colecao_slug),
+        categorias_ids=categorias_ids,
         imagens=[ImagemDetalhe(id=i.id, url=i.url, alt=i.alt, ordem=i.ordem) for i in imagens],
         variacoes=[
             VariacaoAdmin(
@@ -494,6 +499,19 @@ def editar_produto(
     # isso, todo PATCH apagaria a descrição de quem não a editou.
     informados = dados.model_fields_set
 
+    if "categorias_ids" in informados and dados.categorias_ids:
+        categorias = [sessao.get(Categoria, categoria_id) for categoria_id in dados.categorias_ids]
+        colecoes = [sessao.get(Colecao, categoria.colecao_id) if categoria else None for categoria in categorias]
+        if any(not categoria or not categoria.ativa or not colecao or not colecao.ativa for categoria, colecao in zip(categorias, colecoes)):
+            raise _campo_invalido("categoriasIds", "Escolha categorias ativas.")
+        if len({categoria.colecao_id for categoria in categorias}) != len(categorias):
+            raise _campo_invalido("categoriasIds", "Escolha no máximo uma categoria por coleção.")
+        produto.categoria_id = categorias[0].id
+        produto.colecao_id = categorias[0].colecao_id
+        sessao.execute(delete(ProdutoCategoriaAdicional).where(ProdutoCategoriaAdicional.produto_id == produto.id))
+        for categoria in categorias[1:]:
+            sessao.add(ProdutoCategoriaAdicional(produto_id=produto.id, categoria_id=categoria.id))
+
     if "codigo" in informados and dados.codigo:
         novo = dados.codigo.strip().upper()
         if _codigo_ja_existe(sessao, novo, ignorar_id=produto.id):
@@ -509,7 +527,7 @@ def editar_produto(
     if "marca_id" in informados and dados.marca_id is not None:
         _conferir_marca(sessao, dados.marca_id)
         produto.marca_id = dados.marca_id
-    if "categoria_id" in informados and dados.categoria_id is not None:
+    if "categoria_id" in informados and dados.categoria_id is not None and "categorias_ids" not in informados:
         produto.colecao_id = _colecao_da_categoria(sessao, dados.categoria_id)
         produto.categoria_id = dados.categoria_id
 

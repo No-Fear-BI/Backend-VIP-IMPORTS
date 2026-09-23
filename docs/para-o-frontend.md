@@ -1,5 +1,23 @@
 # Para o frontend
 
+## Revisão de fornecedores — publicação no catálogo
+
+`POST /admin/revisao` exige sessão administrativa. Para aprovar, envie
+`{productId, status: "approved", translatedName, categoriasIds, marcaId}`.
+`categoriasIds` aceita uma categoria (uma coleção) ou duas categorias (Masculino
+e Feminino). O produto continua sendo um único cadastro: aparece uma vez em
+Todos e na marca, e os filtros de cada coleção encontram o mesmo id. O campo
+antigo `categoriaId` continua aceito para compatibilidade.
+Categoria, coleção e marca precisam estar ativas. Nome: até 180 caracteres.
+Sem classificação válida, responde 400 `DADOS_INVALIDOS`, com `erro.campos`.
+
+A decisão e o produto são gravados na mesma transação. O produto aparece em
+`GET /produtos` (Todos), no filtro da coleção e no filtro da marca, com página
+de detalhes e imagem. Resposta 200: `{ok, product, produtoId, codigo}`.
+Reenviar a aprovação reutiliza o mesmo produto. Rejeitar ou desfazer oculta
+o produto vinculado. Aprovações anteriores sem classificação são preservadas,
+sem atribuir coleção ou marca por suposição.
+
 O backend agora é FastAPI (Python), tudo sob o prefixo `/api/v1`, como o contrato já previa.
 
 `packages/tipos` deixa de ser mantido à mão: a API expõe seu próprio OpenAPI em `/api/v1/openapi.json`, e os tipos TypeScript são **gerados automaticamente** a partir dele. Dev 2 roda, na raiz do frontend:
