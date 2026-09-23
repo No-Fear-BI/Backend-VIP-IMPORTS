@@ -5,7 +5,7 @@ protegido de rotas/admin_painel.py, e herda de lá o `Depends(exigir_admin)` do
 grupo. Nenhuma rota daqui vai para a lista de exceções da varredura.
 """
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, File, Form, Path, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from vip_api.banco import obter_sessao
@@ -17,14 +17,16 @@ from vip_api.esquemas.admin_produto import (
     ProdutoCriar,
     ProdutoEditar,
     StatusProduto,
+    VariacaoAdmin,
 )
 from vip_api.esquemas.admin_midia import (
+    ImagemUploadSaida,
     ImagensEntrada,
     OrdemEntrada,
     VariacoesEntrada,
 )
 from vip_api.esquemas.base import Pagina
-from vip_api.esquemas.produto import ImagemDetalhe, VariacaoDetalhe
+from vip_api.esquemas.produto import ImagemDetalhe
 from vip_api.servicos.admin_imagens import adicionar_imagens, reordenar_imagens
 from vip_api.servicos.admin_produtos import (
     POR_PAGINA_MAXIMO,
@@ -38,7 +40,9 @@ from vip_api.servicos.admin_produtos import (
     listar_produtos,
     obter_produto,
 )
+from vip_api.servicos.admin_upload import upload_imagem_produto
 from vip_api.servicos.admin_variacoes import definir_variacoes
+from vip_api.servicos.imagens_processamento import TAMANHO_MAXIMO_ARQUIVO
 
 roteador = APIRouter(prefix="/produtos", tags=["admin"])
 
@@ -50,6 +54,9 @@ def listar(
     marca_id: int | None = Query(None, alias="marcaId"),
     categoria_id: int | None = Query(None, alias="categoriaId"),
     colecao_id: int | None = Query(None, alias="colecaoId"),
+    cor_id: int | None = Query(
+        None, alias="corId", description="Produtos que têm esta cor na grade de variações."
+    ),
     status: StatusProduto | None = Query(
         None, description="Ausente traz TUDO, inclusive os ocultos."
     ),
@@ -65,6 +72,7 @@ def listar(
             marca_id=marca_id,
             categoria_id=categoria_id,
             colecao_id=colecao_id,
+            cor_id=cor_id,
             status=status,
             pagina=pagina,
             por_pagina=por_pagina,
@@ -136,6 +144,22 @@ def imagens_acrescentar(
     return adicionar_imagens(sessao, produto_id, corpo.imagens)
 
 
+@roteador.post("/{produtoId}/imagens/upload", response_model=ImagemUploadSaida, status_code=201)
+def imagens_upload(
+    arquivo: UploadFile = File(...),
+    alt: str | None = Form(None, max_length=200),
+    produto_id: int = Path(alias="produtoId"),
+    sessao: Session = Depends(obter_sessao),
+) -> ImagemUploadSaida:
+    """Processa o arquivo e grava em disco — NÃO acrescenta à galeria
+    sozinho. Devolve `{url, alt}` para a tela chamar `POST /imagens` (o de
+    sempre, por URL) com o resultado, exatamente como faria com uma URL
+    digitada à mão."""
+    dados = arquivo.file.read(TAMANHO_MAXIMO_ARQUIVO + 1)
+    url, alt_final = upload_imagem_produto(sessao, produto_id, dados, alt)
+    return ImagemUploadSaida(url=url, alt=alt_final)
+
+
 @roteador.patch("/{produtoId}/imagens/ordem", response_model=list[ImagemDetalhe])
 def imagens_reordenar(
     corpo: OrdemEntrada,
@@ -145,11 +169,11 @@ def imagens_reordenar(
     return reordenar_imagens(sessao, produto_id, corpo.ids)
 
 
-@roteador.patch("/{produtoId}/variacoes", response_model=list[VariacaoDetalhe])
+@roteador.patch("/{produtoId}/variacoes", response_model=list[VariacaoAdmin])
 def variacoes_definir(
     corpo: VariacoesEntrada,
     produto_id: int = Path(alias="produtoId"),
     sessao: Session = Depends(obter_sessao),
-) -> list[VariacaoDetalhe]:
+) -> list[VariacaoAdmin]:
     """SUBSTITUI o conjunto: o que não vier na lista sai."""
     return definir_variacoes(sessao, produto_id, corpo.variacoes)

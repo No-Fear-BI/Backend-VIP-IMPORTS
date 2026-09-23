@@ -69,6 +69,43 @@ class MarcaEditar(EsquemaEntrada):
 
 
 # ======================================================================
+# Cores
+# ======================================================================
+
+
+class CorAdmin(EsquemaResposta):
+    """`total_produtos` conta PRODUTOS distintos, não variações: é o número que
+    a tela mostra antes de alguém tentar excluir a cor."""
+
+    id: int
+    nome: str
+    slug: str
+    ordem: int
+    ativa: bool
+    total_produtos: int
+    criado_em: datetime
+    atualizado_em: datetime
+
+
+class CorCriar(EsquemaEntrada):
+    nome: str = Field(min_length=1, max_length=60)
+    # Ausente: o backend gera a partir do nome.
+    slug: str | None = Field(None, min_length=1, max_length=60)
+    ordem: int = 0
+    ativa: bool = True
+
+
+class CorEditar(EsquemaEntrada):
+    """Trocar o nome reescreve o texto exibido nas variações que usam a cor;
+    o slug, que é a URL do filtro, só muda quando vem no corpo."""
+
+    nome: str | None = Field(None, min_length=1, max_length=60)
+    slug: str | None = Field(None, min_length=1, max_length=60)
+    ordem: int | None = None
+    ativa: bool | None = None
+
+
+# ======================================================================
 # Categorias
 # ======================================================================
 

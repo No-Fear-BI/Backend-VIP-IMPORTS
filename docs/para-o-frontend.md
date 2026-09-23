@@ -123,6 +123,7 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   ```
 
   **Só `https`** — imagem em `http` dentro de uma página `https` é bloqueada pelo navegador como conteúdo misto e o produto aparece sem foto. Máximo de **10 imagens por produto**. As novas entram **no fim** da ordem, então acrescentar foto nunca troca a capa. Responde **201** com a galeria inteira já renumerada.
+- **`POST /api/v1/admin/produtos/:id/imagens/upload`** — upload de arquivo (revisão upload de imagem). `multipart/form-data`: campo `arquivo` (o arquivo) e `alt` opcional (texto, até 200 caracteres). **Não acrescenta a imagem à galeria sozinho** — processa (decodifica de verdade com Pillow, não confia em extensão/Content-Type; redimensiona pro tamanho grande do catálogo; converte pra WebP), grava em disco e responde **201** com `{ "url": "...", "alt": "..." }` — a MESMA forma de um item de `imagens` do endpoint acima. A tela chama esse endpoint pra obter a URL e depois manda o `POST /imagens` de sempre com ela, como faria com uma URL digitada à mão; as duas etapas ficam separadas de propósito, pra não duplicar a regra de limite/ordem/capa numa segunda rota. 400 `DADOS_INVALIDOS` (campo `arquivo`) se o arquivo não abrir como imagem ou passar do tamanho máximo (15 MB); 404 se o produto não existe.
 - **`PATCH /api/v1/admin/produtos/:id/imagens/ordem`** — recebe a lista COMPLETA de ids na ordem desejada: `{ "ids": [12, 10, 11] }`. Lista parcial ou com imagem de outro produto é **400** — reordenar metade deixaria a outra metade com ordem duplicada. Responde com a galeria na ordem nova.
 - **`DELETE /api/v1/admin/imagens/:id`** — apaga uma imagem (sem o produto na URL, como o contrato define) e responde com as imagens que sobraram.
 - **A ordem é sempre 1..N contígua, e a imagem de ordem 1 é a CAPA** — a que aparece na grade do site. Apagar a capa promove a seguinte automaticamente; apagar do meio fecha o buraco. Como as três rotas devolvem a galeria já acertada, a tela não precisa recalcular nada nem recarregar o produto.
@@ -139,6 +140,38 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   **O que permanece mantém o `id`**: uma variação com o mesmo tipo e o mesmo valor não é recriada, é reaproveitada — é isso que preserva a escolha de quem já tinha aquele tamanho no carrinho. Mande sempre a grade completa, inclusive o que não mudou.
 
   Quando uma variação sai, os itens de carrinho que a usavam perdem aquela escolha; se o cliente ficar com dois itens iguais do mesmo produto, eles viram um só. Nada disso devolve erro — é a API acertando o carrinho, e a tela do cliente vê o resultado no próximo `GET /carrinho`.
+
+## Cores: vocabulário no painel e filtro na vitrine (revisão 0007, 21/09/2026)
+
+Estas rotas e parâmetros são posteriores ao contrato v1.0: estão em `docs/contrato-api-v1-adendo.json`, não no `contrato-api-v1.json` (que é a transcrição do PDF do cliente).
+
+Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que muda para o frontend:
+
+- **`GET /api/v1/cores`** (público, sem sessão) — a paleta para montar o filtro. Só as cores **ativas**. Cada uma traz `id`, `nome`, `slug` e `totalProdutos` (contando só produto visível, como em `GET /marcas`). Cor recém-criada aparece com `totalProdutos: 0` — não some da lista por não ter produto ainda.
+- **`GET /api/v1/produtos?cor=preto`** — o filtro da vitrine, **por slug**, e aceita vários separados por vírgula (`?cor=preto,bege`), com **OU** entre eles: traz quem tem preto OU bege, não quem tem os dois. Slug que não existe (ou cor inativa) devolve lista vazia com `total: 0`, e não erro — é filtro que não casa nada, igual a `?marca=`. Combina com todos os outros filtros.
+- **`GET` / `POST /api/v1/admin/cores`, `PATCH` / `DELETE /api/v1/admin/cores/:id`** — o CRUD da paleta, irmão do de marcas. A listagem traz `totalProdutos` por cor (contando os ocultos, é o painel) — mostre esse número ANTES do botão de excluir. Campos: `nome` (obrigatório, até 60), `slug` (opcional, gerado do nome), `ordem` e `ativa`.
+
+  **O slug nasce do nome e não muda sozinho**, pela mesma razão da marca: `?cor=preto` é link compartilhável. Para trocar, mande `slug` no corpo. Slug gerado que colide ganha sufixo (`bege-2`); slug informado que colide é **409 `SLUG_EM_USO`**.
+
+  **Excluir cor em uso é 409 `COR_EM_USO`**, com a contagem em `erro.detalhes.totalProdutos`.
+
+- **Renomear a cor reescreve o texto exibido em todas as variações que a usam.** É o que faz a correção valer para a loja inteira sem reabrir produto por produto. Há um caso que a API recusa: se algum produto já tiver OUTRA variação de cor com o nome novo, a troca colidiria na unicidade `(produto, tipo, valor)` — a resposta é **409 `COR_EM_CONFLITO`**, com `erro.detalhes.codigoProduto` dizendo qual produto trava. Mostre esse código e peça o ajuste na grade daquele produto; a API não apaga variação por conta própria, porque a que sumiria pode estar no carrinho de um cliente.
+
+- **`PATCH /admin/produtos/:id/variacoes` ganhou `corId` na variação de cor**, e ele é **opcional**:
+
+  ```json
+  { "variacoes": [ { "tipo": "cor", "valor": "Preto", "corId": 3 }, { "tipo": "tamanho", "valor": "M" } ] }
+  ```
+
+  Mandando `corId`, **o nome exibido passa a ser o nome da cor no vocabulário** — o `valor` enviado é ignorado. É o caminho do painel, onde a cor é escolhida numa lista. Sem `corId`, a cor é resolvida pelo **slug do texto**: "Preto", "preto" e "PRETO" caem todos na mesma cor, e se nenhuma casar, **a cor é criada ali**. Isso mantém funcionando o importador de planilha, que não tem id nenhum — mas na tela prefira o seletor, porque pelo caminho de texto um erro de digitação vira cor nova na paleta. `corId` em variação de `tipo: "tamanho"` é **400**; `corId` inexistente é **404 `COR_NAO_ENCONTRADA`**.
+
+- **A leitura do painel devolve o `corId` de cada variação**, em `GET /admin/produtos/:id` (`variacoes`) e na resposta do próprio `PATCH …/variacoes`. Em tamanho ele vem `null`. É daqui que a tela tira o id para reenviar a grade: como o PATCH substitui o conjunto inteiro, as cores que o produto já tem voltam também, e **precisam voltar com `corId`**. Pelo texto não serve: renomear "Preto" para "Preto Ônix" mantém o slug `preto` e reescreve o texto da variação, então no próximo salvamento o texto "Preto Ônix" (slug `preto-onix`) não casa com nada e cria uma cor duplicada, sem erro. A leitura pública (`GET /produtos/:codigo`) não traz `corId`.
+
+- **`GET /admin/produtos?corId=`** — a busca de produtos por cor no painel. Aqui é **id**, não slug (o painel já tem a lista em mãos e usa id em todos os outros filtros), e traz os ocultos junto, como o resto da rota.
+
+- **Códigos de erro novos:** `COR_NAO_ENCONTRADA` (404), `COR_EM_USO` (409, exclusão) e `COR_EM_CONFLITO` (409, renomeação).
+
+- **Nada mudou na leitura pública do produto.** `variacaoCor` continua `{id, tipo, valor, disponivel}`, e o carrinho segue com `variacaoCorId` apontando para a **variação**, não para a cor. Nenhuma tela existente precisa mudar por causa desta revisão.
 
 ## Painel administrativo — marcas, categorias e banners (tarefa 57)
 
@@ -157,6 +190,8 @@ Também sob sessão de admin: sem cookie 401, com cookie de cliente 403.
   **No máximo 4 banners ATIVOS** — é o carrossel contratado (proposta, item 2.1). A quinta ativação devolve **400** dizendo o limite, seja no `POST` com `ativo: true`, seja no `PATCH`. Banner **inativo não tem teto**: é rascunho e pode existir aos montes. Reenviar `ativo: true` num banner que já está ativo não conta como nova ativação, então a tela pode mandar o formulário inteiro sem medo.
 
   A ordem é 1..N contígua, como nas imagens do produto: `PATCH /admin/banners/ordem` recebe a lista COMPLETA de ids e o `DELETE` renumera o que sobrou. `GET /home` devolve só os ativos, nessa ordem.
+
+- **`POST /api/v1/admin/banners/upload`** — upload de arquivo (revisão upload de imagem), mesmo formato e mesmas regras do upload de imagem de produto acima: `multipart/form-data` (`arquivo` + `alt` opcional), processa e grava em disco, responde **201** com `{ "url": "...", "alt": "..." }`. Não existe banner ainda nesta etapa — a tela usa a URL devolvida para preencher `imagemUrl` ou `imagemUrlMobile` do formulário e segue para o `POST`/`PATCH /banners` de sempre.
 
 ## Painel administrativo — destaques e consultas (tarefas 58 e 60)
 

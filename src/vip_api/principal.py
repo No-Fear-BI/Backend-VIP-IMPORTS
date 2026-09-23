@@ -1,10 +1,14 @@
 """Ponto de entrada da aplicação. `uvicorn vip_api.principal:app`."""
 
 import logging
+import mimetypes
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from vip_api.configuracao import configuracao
 from vip_api.erros.excecoes import AppError
@@ -40,6 +44,25 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Imagem enviada pelo painel (produtos e banners) — disco local servido pela
+# própria API. O caminho do mount é o PATH de IMAGENS_URL_BASE, não um
+# "/midia" fixo repetido aqui: mudar a variável de ambiente já move os dois
+# juntos, em vez de precisar lembrar de editar aqui também.
+#
+# `.webp` nem sempre está no /etc/mime.types da imagem base (python:3.12-slim
+# não tem), e sem isso o StaticFiles serve toda foto processada como
+# text/plain — o navegador ainda costuma renderizar por sniffing, mas é
+# errado e alguns contextos (CORS, download forçado) dependem do cabeçalho
+# certo. Registrar aqui, antes do mount, garante o tipo certo não importa o
+# que o sistema operacional da imagem já tenha.
+mimetypes.add_type("image/webp", ".webp")
+Path(configuracao.IMAGENS_DIR).mkdir(parents=True, exist_ok=True)
+app.mount(
+    urlsplit(configuracao.IMAGENS_URL_BASE).path or "/midia",
+    StaticFiles(directory=configuracao.IMAGENS_DIR),
+    name="midia",
 )
 
 # Ordem não importa aqui: Starlette escolhe o manipulador mais específico da

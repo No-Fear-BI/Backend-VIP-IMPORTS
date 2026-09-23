@@ -33,6 +33,18 @@ class Configuracao(BaseSettings):
     # código nem no frontend, para trocar em um lugar só.
     WHATSAPP_LOJA: str = ""
 
+    # Upload de imagem pelo painel (produtos e banners) — disco local, servido
+    # pela própria API via StaticFiles (ver principal.py). Diretório relativo
+    # ao processo (dentro do container, `./dados/imagens`, montado como volume
+    # no docker-compose.yml para sobreviver a um `docker compose down`/rebuild).
+    IMAGENS_DIR: str = "./dados/imagens"
+    # Em desenvolvimento aponta pro próprio host http (sem TLS local). Em
+    # produção PRECISA ser https — mesma regra "só https" de toda URL de
+    # imagem do contrato (ImagemEntrada, BannerCriar...): servir por http
+    # atrás de uma página https é conteúdo misto, o navegador bloqueia e a
+    # imagem some sem aviso. Ver `_exigir_imagens_https_em_producao` abaixo.
+    IMAGENS_URL_BASE: str = "http://localhost:8000/midia"
+
     @field_validator("ORIGENS_PERMITIDAS", "PROXIES_CONFIAVEIS", mode="before")
     @classmethod
     def _dividir_lista(cls, valor: object) -> object:
@@ -86,6 +98,24 @@ class Configuracao(BaseSettings):
                 "WHATSAPP_LOJA precisa ser o número da loja em formato "
                 "internacional, só dígitos (ex.: 5541984975960). Sem ele o "
                 "link de cada seleção enviada aponta para lugar nenhum."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exigir_imagens_https_em_producao(self) -> Self:
+        # Em desenvolvimento a API roda http puro (sem Nginx na frente), e
+        # IMAGENS_URL_BASE aponta pra ela mesma — por isso só http é aceito
+        # aqui. Em produção a API já fica atrás do Nginx (PROXIES_CONFIAVEIS
+        # acima), que é quem teria o certificado; subir com IMAGENS_URL_BASE
+        # http produziria imagem que todo navegador bloqueia como conteúdo
+        # misto numa página https, e ninguém percebe até abrir o site.
+        if self.AMBIENTE == "producao" and not self.IMAGENS_URL_BASE.lower().startswith("https://"):
+            raise RuntimeError(
+                "IMAGENS_URL_BASE precisa começar com https:// com "
+                "AMBIENTE=producao (ex.: https://vipimports.com.br/midia, "
+                "servido pelo Nginx à frente da API). Sem isso a imagem "
+                "enviada pelo painel não aparece: o navegador bloqueia http "
+                "dentro de uma página https."
             )
         return self
 

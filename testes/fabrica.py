@@ -24,6 +24,7 @@ from vip_api.modelos.catalogo import (
     ProdutoImagem,
     ProdutoVariacao,
 )
+from vip_api.servicos.admin_variacoes import obter_ou_criar_cor
 
 # Nomes escolhidos para embaralhar as duas ordenações: em ordem alfabética a
 # sequência não bate com a ordem de criação, então uma travessia por `nome`
@@ -104,7 +105,17 @@ def criar_produto(
             )
         )
     for tipo, valor in variacoes or []:
-        sessao.add(ProdutoVariacao(produto_id=produto.id, tipo=tipo, valor=valor))
+        # Cor passa pelo vocabulário: a ck_produto_variacoes_cor_id (revisão
+        # 0007) recusa variação de cor sem cor_id.
+        cor = obter_ou_criar_cor(sessao, valor) if tipo == "cor" else None
+        sessao.add(
+            ProdutoVariacao(
+                produto_id=produto.id,
+                tipo=tipo,
+                valor=cor.nome if cor else valor,
+                cor_id=cor.id if cor else None,
+            )
+        )
     sessao.flush()
     return produto
 

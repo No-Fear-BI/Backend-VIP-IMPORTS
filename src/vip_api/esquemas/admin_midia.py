@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from vip_api.esquemas.base import EsquemaEntrada
+from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
 
 # Teto por produto. A grade do site mostra uma capa e a página do produto
 # mostra a galeria; passar disso é peso de carregamento para o visitante, não
@@ -32,6 +32,15 @@ class ImagensEntrada(EsquemaEntrada):
     imagens: list[ImagemEntrada] = Field(min_length=1, max_length=LIMITE_IMAGENS)
 
 
+class ImagemUploadSaida(EsquemaResposta):
+    """Resposta do upload de arquivo (produto e banner) — mesma forma que um
+    item de `ImagemEntrada`, para a tela reaproveitar o campo de URL/alt que
+    já tem, sem um tipo de dado novo para essa etapa."""
+
+    url: str
+    alt: str | None = None
+
+
 class OrdemEntrada(EsquemaEntrada):
     """A lista COMPLETA de ids na ordem desejada. Lista parcial é recusada:
     reordenar metade deixaria a outra metade com ordem duplicada."""
@@ -40,8 +49,19 @@ class OrdemEntrada(EsquemaEntrada):
 
 
 class VariacaoEntrada(EsquemaEntrada):
+    """`cor_id` só vale para `tipo='cor'`, e é OPCIONAL de propósito.
+
+    Mandando `corId`, o nome exibido passa a ser o nome da cor no vocabulário —
+    é o caminho do painel, onde a cor é escolhida numa lista. Sem `corId`, a
+    cor é resolvida pelo texto de `valor` e, se ainda não existir na paleta,
+    nasce ali (ver servicos/admin_variacoes.definir_variacoes). Exigir o id
+    quebraria `scripts/importar_catalogo.py`, que monta variação a partir da
+    coluna `cores` de uma planilha, onde id nenhum existe.
+    """
+
     tipo: Literal["tamanho", "cor"]
     valor: str = Field(min_length=1, max_length=60)
+    cor_id: int | None = None
     disponivel: bool = True
 
 

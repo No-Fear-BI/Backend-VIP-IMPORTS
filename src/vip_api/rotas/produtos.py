@@ -30,6 +30,13 @@ def listar(
     marca: str | None = Query(
         None, description="Slug da marca. Aceita várias separadas por vírgula."
     ),
+    cor: str | None = Query(
+        None,
+        description=(
+            "Slug da cor. Aceita várias separadas por vírgula, com OU entre elas. "
+            "Cor inativa no painel não casa nada."
+        ),
+    ),
     busca: str | None = Query(None, description="Filtra por nome do produto ou da marca."),
     ordem: Literal["recentes", "nome"] = Query("recentes"),
     cursor: str | None = Query(None, description="Ausente na primeira página."),
@@ -45,6 +52,7 @@ def listar(
             colecao=colecao,
             categoria=categoria,
             marca=marca,
+            cor=cor,
             busca=busca,
             ordem=ordem,
             cursor=cursor,

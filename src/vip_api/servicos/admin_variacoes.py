@@ -26,12 +26,13 @@ escrevesse o seu reintroduziria o 500.
 from sqlalchemy import delete, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
-from vip_api.erros.codigos import DADOS_INVALIDOS, PRODUTO_NAO_ENCONTRADO
+from vip_api.erros.codigos import COR_NAO_ENCONTRADA, DADOS_INVALIDOS, PRODUTO_NAO_ENCONTRADO
 from vip_api.erros.excecoes import AppError
 from vip_api.esquemas.admin_midia import VariacaoEntrada
-from vip_api.esquemas.produto import VariacaoDetalhe
-from vip_api.modelos.catalogo import Produto, ProdutoVariacao
+from vip_api.esquemas.admin_produto import VariacaoAdmin
+from vip_api.modelos.catalogo import Cor, Produto, ProdutoVariacao
 from vip_api.modelos.cliente import CarrinhoItem
+from vip_api.texto import gerar_slug
 
 LIMITE_VARIACOES = 40
 
@@ -115,21 +116,86 @@ def _campo_invalido(campo: str, mensagem: str) -> AppError:
     )
 
 
-def listar_variacoes(sessao: Session, produto_id: int) -> list[VariacaoDetalhe]:
+def obter_ou_criar_cor(sessao: Session, nome: str) -> Cor:
+    """A cor do vocabulário que corresponde a este texto, criando-a se faltar.
+
+    Procura pelo SLUG, e não pelo texto: "Preto", "preto" e "PRETO" caem na
+    mesma linha da paleta. É a porta única para transformar texto de cor em
+    linha de `cores` — usam-na a gravação da grade, a duplicação de produto, a
+    massa sintética e o importador de planilha. Sem ela, cada chamador
+    reinventaria a normalização e a paleta encheria de duplicata.
+
+    NÃO faz commit: quem chama decide o limite da transação.
+    """
+    limpo = nome.strip()
+    slug = gerar_slug(limpo)
+    if not slug:
+        raise _campo_invalido("variacoes", f"'{nome}' não é um nome de cor válido.")
+
+    cor = sessao.scalar(select(Cor).where(Cor.slug == slug))
+    if cor is None:
+        cor = Cor(nome=limpo, slug=slug)
+        sessao.add(cor)
+        sessao.flush()
+    return cor
+
+
+def _resolver_cor(sessao: Session, pedida: VariacaoEntrada) -> tuple[str, int | None]:
+    """Devolve (valor exibido, cor_id) de UMA variação pedida.
+
+    Tamanho sai daqui intocado, com cor_id nulo — a CHECK
+    `ck_produto_variacoes_cor_id` recusa tamanho com cor.
+
+    Para cor, há dois caminhos:
+    1. `corId` veio (o painel escolheu na paleta): manda o vocabulário. O texto
+       exibido vira o nome da cor, mesmo que `valor` diga outra coisa — é o que
+       faz renomear a cor valer para todo mundo.
+    2. `corId` não veio (planilha, script, chamada antiga): a cor é procurada
+       pelo SLUG do texto, então "Preto", "preto" e "PRETO" caem na mesma cor
+       que já existe. Não achou, nasce agora.
+
+    O "nasce agora" é deliberado. Exigir cadastro prévio deixaria
+    `importar_catalogo.py` sem saída e transformaria cada importação de
+    planilha num cadastro manual de paleta. O preço é que um erro de digitação
+    pelo caminho de texto vira cor nova — por isso o painel escolhe na lista, e
+    a tela de cores permite renomear e excluir o que entrou torto.
+    """
+    valor = pedida.valor.strip()
+    if pedida.tipo != "cor":
+        if pedida.cor_id is not None:
+            raise _campo_invalido("variacoes", "Variação de tamanho não leva cor.")
+        return valor, None
+
+    if pedida.cor_id is not None:
+        cor = sessao.get(Cor, pedida.cor_id)
+        if cor is None:
+            raise AppError(
+                codigo=COR_NAO_ENCONTRADA,
+                mensagem=f"Cor {pedida.cor_id} não encontrada.",
+                status_code=404,
+                campos={"corId": "Cor não encontrada."},
+            )
+        return cor.nome, cor.id
+
+    cor = obter_ou_criar_cor(sessao, valor)
+    return cor.nome, cor.id
+
+
+def listar_variacoes(sessao: Session, produto_id: int) -> list[VariacaoAdmin]:
     linhas = sessao.scalars(
         select(ProdutoVariacao)
         .where(ProdutoVariacao.produto_id == produto_id)
         .order_by(ProdutoVariacao.tipo.asc(), ProdutoVariacao.ordem.asc(), ProdutoVariacao.id.asc())
     ).all()
     return [
-        VariacaoDetalhe(id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel)
+        VariacaoAdmin(id=v.id, tipo=v.tipo, valor=v.valor, disponivel=v.disponivel, cor_id=v.cor_id)
         for v in linhas
     ]
 
 
 def definir_variacoes(
     sessao: Session, produto_id: int, desejadas: list[VariacaoEntrada]
-) -> list[VariacaoDetalhe]:
+) -> list[VariacaoAdmin]:
     """SUBSTITUI o conjunto inteiro — "definir", como diz a seção 06 do
     contrato, não "acrescentar".
 
@@ -146,14 +212,19 @@ def definir_variacoes(
             "variacoes", f"No máximo {LIMITE_VARIACOES} variações por produto."
         )
 
+    # Resolver a cor ANTES de procurar repetição: duas entradas com o mesmo
+    # `corId` e textos diferentes ("preto" e "Preto") viram o mesmo valor
+    # depois da resolução, e só aqui dá para enxergar que são a mesma linha.
+    # Sem isso, elas passariam pela checagem e a UNIQUE do banco devolveria 500.
+    resolvidas: list[tuple[str, str, int | None, bool]] = []
     vistas: set[tuple[str, str]] = set()
     for pedida in desejadas:
-        chave = (pedida.tipo, pedida.valor.strip())
+        valor, cor_id = _resolver_cor(sessao, pedida)
+        chave = (pedida.tipo, valor)
         if chave in vistas:
-            raise _campo_invalido(
-                "variacoes", f"'{pedida.valor.strip()}' aparece duas vezes em {pedida.tipo}."
-            )
+            raise _campo_invalido("variacoes", f"'{valor}' aparece duas vezes em {pedida.tipo}.")
         vistas.add(chave)
+        resolvidas.append((pedida.tipo, valor, cor_id, pedida.disponivel))
 
     atuais = {
         (variacao.tipo, variacao.valor): variacao
@@ -164,20 +235,24 @@ def definir_variacoes(
 
     mantidos: set[int] = set()
     novas: list[ProdutoVariacao] = []
-    for ordem, pedida in enumerate(desejadas):
-        valor = pedida.valor.strip()
-        existente = atuais.get((pedida.tipo, valor))
+    for ordem, (tipo, valor, cor_id, disponivel) in enumerate(resolvidas):
+        existente = atuais.get((tipo, valor))
         if existente is not None:
-            existente.disponivel = pedida.disponivel
+            existente.disponivel = disponivel
             existente.ordem = ordem
+            # A linha pode ser anterior à revisão 0007, com o texto certo e
+            # cor_id de outra cor (grafia que virou outra linha na paleta).
+            # Salvar a grade é o momento em que ela se acerta.
+            existente.cor_id = cor_id
             mantidos.add(existente.id)
         else:
             novas.append(
                 ProdutoVariacao(
                     produto_id=produto_id,
-                    tipo=pedida.tipo,
+                    tipo=tipo,
                     valor=valor,
-                    disponivel=pedida.disponivel,
+                    cor_id=cor_id,
+                    disponivel=disponivel,
                     ordem=ordem,
                 )
             )

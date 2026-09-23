@@ -8,7 +8,7 @@ NÃO existe CRUD de coleções, e não é esquecimento: são duas, fixas, vindas
 migração 0002, e o contrato não tem rota para elas.
 """
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, File, Form, Path, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from vip_api.banco import obter_sessao
@@ -19,11 +19,15 @@ from vip_api.esquemas.admin_catalogo import (
     CategoriaAdmin,
     CategoriaCriar,
     CategoriaEditar,
+    CorAdmin,
+    CorCriar,
+    CorEditar,
     MarcaAdmin,
     MarcaCriar,
     MarcaEditar,
     OrdemBanners,
 )
+from vip_api.esquemas.admin_midia import ImagemUploadSaida
 from vip_api.servicos.admin_banners import (
     criar_banner,
     editar_banner,
@@ -31,11 +35,19 @@ from vip_api.servicos.admin_banners import (
     listar_banners,
     reordenar_banners,
 )
+from vip_api.servicos.admin_upload import upload_imagem_banner
+from vip_api.servicos.imagens_processamento import TAMANHO_MAXIMO_ARQUIVO
 from vip_api.servicos.admin_categorias import (
     criar_categoria,
     editar_categoria,
     excluir_categoria,
     listar_categorias,
+)
+from vip_api.servicos.admin_cores import (
+    criar_cor,
+    editar_cor,
+    excluir_cor,
+    listar_cores,
 )
 from vip_api.servicos.admin_marcas import (
     criar_marca,
@@ -45,6 +57,7 @@ from vip_api.servicos.admin_marcas import (
 )
 
 roteador_marcas = APIRouter(prefix="/marcas", tags=["admin"])
+roteador_cores = APIRouter(prefix="/cores", tags=["admin"])
 roteador_categorias = APIRouter(prefix="/categorias", tags=["admin"])
 roteador_banners = APIRouter(prefix="/banners", tags=["admin"])
 
@@ -79,6 +92,40 @@ def marcas_excluir(
     marca_id: int = Path(alias="marcaId"), sessao: Session = Depends(obter_sessao)
 ) -> dict[str, bool]:
     excluir_marca(sessao, marca_id)
+    return {"ok": True}
+
+
+# ======================================================================
+# Cores
+# ======================================================================
+
+
+@roteador_cores.get("", response_model=list[CorAdmin])
+def cores_listar(sessao: Session = Depends(obter_sessao)) -> list[CorAdmin]:
+    return listar_cores(sessao)
+
+
+@roteador_cores.post("", response_model=CorAdmin, status_code=201)
+def cores_criar(corpo: CorCriar, sessao: Session = Depends(obter_sessao)) -> CorAdmin:
+    return criar_cor(sessao, corpo)
+
+
+@roteador_cores.patch("/{corId}", response_model=CorAdmin)
+def cores_editar(
+    corpo: CorEditar,
+    cor_id: int = Path(alias="corId"),
+    sessao: Session = Depends(obter_sessao),
+) -> CorAdmin:
+    """Trocar o nome reescreve o texto das variações que usam a cor; trocar o
+    slug só acontece se `slug` vier no corpo."""
+    return editar_cor(sessao, cor_id, corpo)
+
+
+@roteador_cores.delete("/{corId}")
+def cores_excluir(
+    cor_id: int = Path(alias="corId"), sessao: Session = Depends(obter_sessao)
+) -> dict[str, bool]:
+    excluir_cor(sessao, cor_id)
     return {"ok": True}
 
 
@@ -135,6 +182,19 @@ def banners_criar(
     corpo: BannerCriar, sessao: Session = Depends(obter_sessao)
 ) -> BannerAdmin:
     return criar_banner(sessao, corpo)
+
+
+@roteador_banners.post("/upload", response_model=ImagemUploadSaida, status_code=201)
+def banners_upload(
+    arquivo: UploadFile = File(...),
+    alt: str | None = Form(None, max_length=200),
+) -> ImagemUploadSaida:
+    """Processa o arquivo e grava em disco. Não existe banner ainda nesta
+    etapa — devolve `{url, alt}` para o formulário preencher o campo de
+    imagem (desktop ou celular) e seguir para o `POST`/`PATCH` de sempre."""
+    dados = arquivo.file.read(TAMANHO_MAXIMO_ARQUIVO + 1)
+    url, alt_final = upload_imagem_banner(dados, alt)
+    return ImagemUploadSaida(url=url, alt=alt_final)
 
 
 # ANTES de /{bannerId}: "ordem" casaria com o parâmetro de caminho e morreria
