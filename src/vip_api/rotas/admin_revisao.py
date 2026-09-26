@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,9 @@ from vip_api.banco import obter_sessao
 from vip_api.configuracao import configuracao
 from vip_api.erros.excecoes import AppError
 from vip_api.modelos.revisao import DecisaoRevisao
+from vip_api.modelos.catalogo import Colecao
+from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos
+from vip_api.texto import gerar_slug
 from vip_api.servicos.imagens_processamento import abrir_imagem
 from vip_api.servicos.importacao_catalogo import importar_produto
 
@@ -87,6 +90,7 @@ class Decisao(BaseModel):
     # NUNCA vem de `supplier`/`p['category']` sozinho, ver docstring do módulo.
     marca: str | None = None
     colecao: str | None = None
+    categoriasIds: list[int] | None = Field(None, min_length=1, max_length=2)
 
 @roteador.get('/pendentes')
 def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por_pagina:int=Query(60,alias='porPagina',ge=1,le=100), sessao:Session=Depends(obter_sessao)):
@@ -115,6 +119,9 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
         campos = {}
         if not marca:
             campos['marca'] = 'Escolha a marca do produto.'
+        destinos = validar_destinos(sessao, corpo.categoriasIds) if corpo.categoriasIds is not None else None
+        if destinos:
+            colecao = sessao.get(Colecao, destinos[0].colecao_id).slug
         if colecao not in {'feminino', 'masculino'}:
             campos['colecao'] = 'Escolha feminino ou masculino.'
         if campos:
@@ -122,13 +129,13 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
 
         imagem = _baixar_foto_yupoo(p['image'], p['sourceUrl'])
         try:
-            importar_produto(
+            produto, _ = importar_produto(
                 sessao,
                 codigo_origem=p['id'],
                 nome=nome,
                 descricao=None,
                 nome_marca=marca[:80],
-                nome_categoria=_singular.get(p['category'], p['category'])[:80],
+                nome_categoria=destinos[0].nome if destinos else _singular.get(p['category'], p['category'])[:80],
                 valor_colecao=colecao,
                 origem_url=p['sourceUrl'],
                 tamanhos=[],
@@ -138,12 +145,14 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
                 url_base=configuracao.IMAGENS_URL_BASE,
                 cache_marcas={},
                 cache_colecoes={},
-                cache_categorias={},
+                cache_categorias={(destinos[0].colecao_id, gerar_slug(destinos[0].nome)): destinos[0]} if destinos else {},
                 # `p['id']` é "<fornecedor>-<id do álbum>" — pasta_imagens
                 # usa só o número: a pasta pública nunca carrega o nome do
                 # fornecedor, mesmo indiretamente pela URL da foto.
                 pasta_imagens=p['id'].rsplit('-', 1)[-1],
             )
+            if destinos:
+                definir_destinos(sessao, produto, destinos)
         except ValueError as exc:
             raise AppError('DADOS_INVALIDOS', str(exc), 400) from exc
 

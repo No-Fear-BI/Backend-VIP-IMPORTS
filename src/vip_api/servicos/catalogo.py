@@ -37,6 +37,7 @@ from vip_api.modelos.catalogo import (
     ProdutoVariacao,
 )
 from vip_api.texto import normalizar
+from vip_api.servicos.produto_destinos import pertence_categoria, pertence_colecao
 
 POR_PAGINA_PADRAO = 24
 POR_PAGINA_MAXIMO = 48
@@ -165,9 +166,9 @@ def _aplicar_filtros(stmt: Select, filtros: FiltrosProduto, ids: dict) -> Select
     if ids["categoria_id"] is not None:
         # categoria_id já implica a coleção (a FK composta garante), então não
         # precisa filtrar as duas coisas.
-        stmt = stmt.where(Produto.categoria_id == ids["categoria_id"])
+        stmt = stmt.where(pertence_categoria(ids["categoria_id"]))
     elif ids["colecao_id"] is not None:
-        stmt = stmt.where(Produto.colecao_id == ids["colecao_id"])
+        stmt = stmt.where(pertence_colecao(ids["colecao_id"]))
 
     if ids["marca_ids"] is not None:
         stmt = stmt.where(Produto.marca_id.in_(ids["marca_ids"]))

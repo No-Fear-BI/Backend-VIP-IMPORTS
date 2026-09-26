@@ -1,8 +1,8 @@
 """Fila de revisão dos produtos de fornecedores."""
 from alembic import op
 import sqlalchemy as sa
-revision = '0008'
-down_revision = '0007'
+revision = '0007_revisao_produtos'
+down_revision = '0006'
 branch_labels = None
 depends_on = None
 def upgrade():
