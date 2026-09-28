@@ -2,7 +2,7 @@
   "versao": "1.0",
   "origem": "documento",
   "fonte": "Contrato de API · Loja Virtual VIP Imports · versão 1.0 (PDF, circulação interna)",
-  "observacao": "Extraído do documento, não reconstruído. As seções 02 a 4.4 somam os 52 endpoints declarados. A seção 05 traz 6 rotas previstas e CONGELADAS por decisão do cliente: nenhuma delas pode existir na aplicação. Os nomes de caminho usam a grafia dos parâmetros como o backend os registra; o documento escreve :id onde aqui se lê {produtoId} e {imagemId}.",
+  "observacao": "Extraído do documento, não reconstruído. As seções 02 a 4.4 somam os 52 endpoints declarados. A seção 05 traz 6 rotas previstas e congeladas por decisão do cliente; em 28/09/2026 o cliente ligou o modo 3 (aprovação) e 5 delas saíram do congelamento. Só POST /acesso/senha (modo 2, senha compartilhada) continua congelada e não pode existir na aplicação. Os nomes de caminho usam a grafia dos parâmetros como o backend os registra; o documento escreve :id onde aqui se lê {produtoId} e {imagemId}.",
   "endpoints": [
     {"metodo":"GET","rota":"/home","secao":"02","situacao":"implementar","handler":"montarHome"},
     {"metodo":"GET","rota":"/produtos","secao":"02","situacao":"implementar","handler":"listarProdutos"},
@@ -62,11 +62,11 @@
     {"metodo":"GET","rota":"/admin/selecoes/{selecaoId}","secao":"4.4","situacao":"implementar","handler":"obterSelecaoAdmin"},
     {"metodo":"GET","rota":"/admin/clientes","secao":"4.4","situacao":"implementar","handler":"listarClientesAdmin"},
 
-    {"metodo":"GET","rota":"/acesso/estado","secao":"05","situacao":"congelada","handler":"obterEstadoAcesso","modo":"todos"},
+    {"metodo":"GET","rota":"/acesso/estado","secao":"05","situacao":"implementar","handler":"obterEstadoAcesso","modo":"todos"},
     {"metodo":"POST","rota":"/acesso/senha","secao":"05","situacao":"congelada","handler":"validarSenhaAcesso","modo":"2"},
-    {"metodo":"POST","rota":"/acesso/solicitar","secao":"05","situacao":"congelada","handler":"solicitarAcesso","modo":"3"},
-    {"metodo":"GET","rota":"/admin/acesso/fila","secao":"05","situacao":"congelada","handler":"listarFilaAprovacao","modo":"3"},
-    {"metodo":"PATCH","rota":"/admin/acesso/{clienteId}","secao":"05","situacao":"congelada","handler":"decidirAcesso","modo":"3"},
-    {"metodo":"PATCH","rota":"/admin/configuracao/acesso","secao":"05","situacao":"congelada","handler":"definirModoAcesso","modo":"todos"}
+    {"metodo":"POST","rota":"/acesso/solicitar","secao":"05","situacao":"implementar","handler":"solicitarAcesso","modo":"3"},
+    {"metodo":"GET","rota":"/admin/acesso/fila","secao":"05","situacao":"implementar","handler":"listarFilaAprovacao","modo":"3"},
+    {"metodo":"PATCH","rota":"/admin/acesso/{clienteId}","secao":"05","situacao":"implementar","handler":"decidirAcesso","modo":"3"},
+    {"metodo":"PATCH","rota":"/admin/configuracao/acesso","secao":"05","situacao":"implementar","handler":"definirModoAcesso","modo":"todos"}
   ]
 }

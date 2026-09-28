@@ -214,3 +214,35 @@ Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que mud
 Execute `node scripts/sync-yupoo.mjs` na raiz do backend. O script percorre a listagem global do fornecedor qwer888 até o total de páginas declarado, sem filtro de marcas. Confere o total de álbuns únicos antes de substituir o JSON, cria `data/pending-products.backup.json` e registra a contagem em `data/sync-yupoo-report.json`. Uma falha de rede ou contagem mantém a fila anterior. Reexecuções usam o ID do álbum e não duplicam produtos. Registros antigos e outros fornecedores são preservados. Produtos novos ficam em `A classificar`; categorias já atribuídas são mantidas. As decisões continuam no PostgreSQL.
 
 `GET /api/v1/admin/revisao/pendentes` aceita `pagina` (mínimo 1) e `porPagina` (1–100, padrão 60), além de `busca` e `categoria`. Retorna `items`, `total`, `categories`, `pagina`, `paginas` e `porPagina`. O total considera o filtro e exclui produtos já decididos; páginas fora do intervalo são ajustadas para a última página. O backend recarrega o catálogo quando o arquivo muda. Depois de decidir um produto, o frontend atualiza a página para repor os itens disponíveis.
+
+## Controle de entrada da loja — seção 05, modo aprovação (28/09/2026)
+
+O cliente da No Fear decidiu ligar o modo 3 da seção 05: quem não foi aprovado pela equipe não vê o catálogo. Cinco das seis rotas saíram do congelamento. **`POST /acesso/senha` (modo 2, senha compartilhada) continua congelada e não existe.**
+
+- **O site nasce aberto.** A revisão 0013 semeia `acesso_config` com `modo = 'aberto'`, e nesse modo nada muda para ninguém. Quem liga o portão é o admin, pelo painel. Linha ausente no banco também conta como aberto.
+- **O portão.** Com `modo = 'aprovacao'`, todas as rotas de catálogo e de conta passam por ele: `/home`, `/produtos`, `/produtos/:codigo`, `/produtos/:codigo/relacionados`, `/marcas`, `/cores`, `/colecoes`, `/colecoes/:slug/categorias`, `/favoritos`, `/carrinho` e `/selecoes`. A resposta de quem não passa:
+  - **401 `NAO_IDENTIFICADO`**, sem sessão de cliente. É o mesmo 401 de sempre: mande para a identificação.
+  - **403 `ACESSO_PENDENTE`**, identificado e aguardando liberação.
+  - **403 `ACESSO_RECUSADO`**, identificado e recusado (ou com o acesso revogado).
+
+  Nos dois 403, `erro.mensagem` traz a mensagem de bloqueio que o painel escreveu (ou um texto padrão, se não houver nenhuma), e `erro.detalhes.situacao` traz `pendente` ou `recusado`.
+- **Ficam sempre fora do portão:** `/acesso/*`, `/clientes/*` (identificar, eu, sair), `/health` e **todo o `/admin/*`**. O painel nunca é barrado, porque é dali que a equipe desliga o portão. Uma varredura em `testes/teste_acesso_loja.py` falha se alguma rota pública escapar do portão sem estar nessa lista, ou se o portão pegar o painel.
+- **Cliente novo com o portão ligado nasce `pendente`.** `POST /clientes/identificar` continua respondendo sempre 200 e com o mesmo corpo. O que muda é que um e-mail que ainda não existia entra pendente. **Quem já estava cadastrado continua aprovado**: ligar o modo não tranca ninguém que já existe (o default da coluna é `'aprovado'`).
+- **`GET /api/v1/acesso/estado`** nunca é barrado e nunca devolve 401. É a primeira chamada da loja ao abrir:
+
+  ```json
+  { "modo": "aprovacao", "podeNavegar": false, "identificado": true,
+    "situacao": "pendente", "solicitacaoPendente": false,
+    "mensagemBloqueio": "Loja exclusiva para clientes convidados." }
+  ```
+
+  `podeNavegar` é o que decide a tela. Sem sessão, `identificado` vem `false` e `situacao` vem `null`. `solicitacaoPendente` separa quem ainda precisa pedir liberação de quem já pediu e está esperando.
+- **`POST /api/v1/acesso/solicitar`** pede a liberação. **Exige sessão de cliente** (401 sem ela), então o fluxo é identificar e depois solicitar. Corpo opcional `{ "nome": "...", "telefone": "..." }`: atualiza o cadastro e fica congelado no pedido. Responde **200** com o mesmo formato de `/acesso/estado`. **É idempotente**: pedir de novo devolve o mesmo estado e não cria um segundo pedido. Com a loja aberta, ou com o cliente já aprovado, não cria nada e só devolve o estado. **Cliente recusado leva 403 `ACESSO_RECUSADO`** e não reabre pedido sozinho; quem reabre é a equipe, pelo painel.
+- **`GET /api/v1/admin/acesso/fila`** lista os pedidos pendentes, do mais antigo para o mais novo, com `?pagina=` e `?porPagina=` no envelope `{dados, paginacao}`. Cada item traz `id`, `clienteId`, `email`, `nome`, `telefone` e `criadoEm`, copiados do cadastro no momento do pedido.
+- **`PATCH /api/v1/admin/acesso/:clienteId`** aprova, recusa ou revoga. Corpo `{ "situacao": "aprovado" | "recusado", "motivo": "opcional, uso interno" }`. A decisão é **por cliente**, não por pedido:
+  - com pedido pendente, a decisão fecha o pedido;
+  - sem pedido pendente (aprovado que perde o acesso, recusado que a equipe resolve liberar), grava uma linha já decidida no histórico.
+
+  Nos dois casos, `clientes.acesso_status` muda na mesma transação e o admin que decidiu fica registrado. Repetir a mesma decisão não cria linha nova, e a resposta vem com `decididoEm: null`. `situacao: "pendente"` é recusado com 400. Cliente inexistente devolve 404 `CLIENTE_NAO_ENCONTRADO`.
+- **`PATCH /api/v1/admin/configuracao/acesso`** liga e desliga o portão. É um PATCH parcial: `{ "modo": "aberto" | "aprovacao", "mensagemBloqueio": "..." }`. `mensagemBloqueio: null` apaga a mensagem. `senha_compartilhada` é recusado com 400, porque o modo não tem rota de entrada construída. Responde com `modo`, `mensagemBloqueio` e `atualizadoEm`. **Não existe `GET` administrativo da configuração**: o painel lê o modo e a mensagem atuais em `GET /acesso/estado`, que é público. É a mesma exceção da tela de Destaques, que lê a home pública.
+- **Códigos de erro novos:** `ACESSO_PENDENTE` (403) e `ACESSO_RECUSADO` (403).

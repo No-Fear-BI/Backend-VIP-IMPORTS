@@ -22,6 +22,7 @@ from vip_api.dependencias.sessao_admin import (
     exigir_admin,
 )
 from vip_api.esquemas.admin import AdminEu
+from vip_api.rotas.admin_acesso import roteador_acesso, roteador_configuracao
 from vip_api.rotas.admin_catalogo import (
     roteador_banners,
     roteador_categorias,
@@ -53,6 +54,10 @@ roteador.include_router(roteador_resumo)
 roteador.include_router(roteador_selecoes)
 roteador.include_router(roteador_clientes)
 roteador.include_router(roteador_revisao)
+# Controle de entrada da loja (seção 05). Aqui, no grupo protegido — e só
+# aqui: o portão da loja (dependencias/acesso.py) nunca pega o painel.
+roteador.include_router(roteador_acesso)
+roteador.include_router(roteador_configuracao)
 
 
 @roteador.get("/eu", response_model=AdminEu)

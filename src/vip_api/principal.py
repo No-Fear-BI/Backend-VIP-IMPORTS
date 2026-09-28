@@ -5,18 +5,20 @@ import mimetypes
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from vip_api.configuracao import configuracao
+from vip_api.dependencias.acesso import exigir_acesso_liberado
 from vip_api.erros.excecoes import AppError
 from vip_api.erros.manipuladores import (
     tratar_app_error,
     tratar_erro_validacao,
     tratar_excecao_nao_tratada,
 )
+from vip_api.rotas.acesso import roteador as roteador_acesso
 from vip_api.rotas.admin_painel import roteador as roteador_admin_painel
 from vip_api.rotas.admin_sessao import roteador as roteador_admin_sessao
 from vip_api.rotas.carrinho import roteador as roteador_carrinho
@@ -74,13 +76,22 @@ app.add_exception_handler(Exception, tratar_excecao_nao_tratada)
 # não direto em `app` — é o que garante o prefixo /api/v1 em tudo.
 roteador_v1 = APIRouter(prefix="/api/v1")
 roteador_v1.include_router(roteador_saude)
-roteador_v1.include_router(roteador_produtos)
-roteador_v1.include_router(roteador_navegacao)
-roteador_v1.include_router(roteador_home)
+# Catálogo e conta: atrás do PORTÃO da loja (seção 05). Com o modo em
+# 'aberto' ele não barra nada; em 'aprovacao', só o cliente aprovado passa.
+# A proteção vai no include, por roteador — rota nova num destes arquivos já
+# nasce atrás do portão. A varredura de testes/teste_acesso_loja.py falha se
+# alguma rota pública ficar fora sem estar na lista de exceções.
+portao = [Depends(exigir_acesso_liberado)]
+roteador_v1.include_router(roteador_produtos, dependencies=portao)
+roteador_v1.include_router(roteador_navegacao, dependencies=portao)
+roteador_v1.include_router(roteador_home, dependencies=portao)
+roteador_v1.include_router(roteador_favoritos, dependencies=portao)
+roteador_v1.include_router(roteador_carrinho, dependencies=portao)
+roteador_v1.include_router(roteador_selecoes, dependencies=portao)
+# Fora do portão: identificar é o primeiro passo do pedido de acesso, e
+# /acesso/* é por onde o barrado entende o motivo e pede liberação.
 roteador_v1.include_router(roteador_clientes)
-roteador_v1.include_router(roteador_favoritos)
-roteador_v1.include_router(roteador_carrinho)
-roteador_v1.include_router(roteador_selecoes)
+roteador_v1.include_router(roteador_acesso)
 # Login e logout ficam FORA do roteador protegido: exigir sessão de admin
 # para abrir a sessão de admin trancaria o painel para quem tem a senha
 # certa. São as duas únicas rotas /admin sem proteção, e a exceção está

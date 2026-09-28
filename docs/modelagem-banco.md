@@ -579,6 +579,8 @@ Estrutura igual à de `cliente_sessoes`, em tabela separada de propósito.
 
 ### 4.17 `acesso_config`
 
+> **Atualização de 28/09/2026:** o cliente ligou o modo 3 (aprovação). As rotas saíram do congelamento, exceto `POST /acesso/senha` (modo 2). O desenho das tabelas não mudou. A revisão 0013 semeia a linha única em `'aberto'` (nenhuma migração anterior inseria a linha). Um cliente criado por `POST /clientes/identificar` com o modo em `'aprovacao'` nasce `acesso_status = 'pendente'`, e quem já existia continua `'aprovado'`. Revogar o acesso de alguém sem pedido pendente grava uma linha já decidida em `acesso_solicitacoes`, dentro do mesmo `CHECK`. Contrato para o frontend em `para-o-frontend.md`.
+
 Seção 05 do contrato: modo de acesso configurável. **Modelado agora, não implementado agora — reafirmado na revisão da tarefa 2.** As rotas continuam congeladas até decisão do cliente da No Fear, e a tabela continua existindo mesmo assim: é decisão deliberada, não escopo vazando. Remodelar isto depois de 11 mil produtos e uma base de clientes real cadastrados é exatamente o cenário que este desenho evita. Linha única.
 
 | Coluna | Tipo | Nulo | Padrão | Restrição | Observação |

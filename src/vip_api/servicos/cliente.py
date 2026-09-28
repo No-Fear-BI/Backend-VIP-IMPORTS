@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from vip_api.erros.codigos import DADOS_INVALIDOS
 from vip_api.erros.excecoes import AppError
 from vip_api.modelos.cliente import Cliente, ClienteSessao
+from vip_api.servicos.acesso import MODO_APROVACAO, modo_atual
 from vip_api.seguranca.tokens import gerar_token, hash_do_token
 
 DURACAO_SESSAO = timedelta(days=90)
@@ -56,6 +57,12 @@ def identificar_cliente(sessao: Session, email: str) -> Cliente:
     cliente = sessao.scalar(select(Cliente).where(Cliente.email == normalizado))
     if cliente is None:
         cliente = Cliente(email=normalizado)
+        # Com a loja no modo aprovação (seção 05), quem chega agora nasce
+        # PENDENTE — senão o default 'aprovado' da coluna deixaria qualquer
+        # e-mail novo passar pelo portão. Só na criação: quem já está
+        # cadastrado nunca é trancado por o modo ter sido ligado depois.
+        if modo_atual(sessao) == MODO_APROVACAO:
+            cliente.acesso_status = "pendente"
         sessao.add(cliente)
         sessao.commit()
         sessao.refresh(cliente)

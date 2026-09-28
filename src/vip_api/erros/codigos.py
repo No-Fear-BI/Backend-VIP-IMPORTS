@@ -35,6 +35,11 @@ COR_EM_USO = "COR_EM_USO"
 # valor) recusa — e a tela precisa saber que foi colisão de nome, não falha
 # genérica, para sugerir juntar as duas cores em vez de tentar de novo.
 COR_EM_CONFLITO = "COR_EM_CONFLITO"
+# Controle de entrada da loja (seção 05, modo aprovação). Dois códigos, não
+# um: a tela do visitante é diferente — "seu pedido está em análise" contra
+# "seu acesso não foi liberado". Sem sessão continua NAO_IDENTIFICADO (401).
+ACESSO_PENDENTE = "ACESSO_PENDENTE"
+ACESSO_RECUSADO = "ACESSO_RECUSADO"
 EXCESSO_TENTATIVAS = "EXCESSO_TENTATIVAS"
 ERRO_INTERNO = "ERRO_INTERNO"
 

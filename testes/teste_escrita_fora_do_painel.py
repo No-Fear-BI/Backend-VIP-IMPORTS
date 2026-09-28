@@ -30,6 +30,7 @@ ESCRITA_PUBLICA = {
     ("DELETE", "/api/v1/carrinho/{itemId}"): "remoção do próprio carrinho (tarefa 43)",
     ("POST", "/api/v1/carrinho/migrar"): "carrinho anônimo para a conta (tarefa 47)",
     ("POST", "/api/v1/selecoes"): "envio da seleção para o WhatsApp (tarefa 44)",
+    ("POST", "/api/v1/acesso/solicitar"): "o cliente pede a liberação da própria conta (seção 05, modo aprovação)",
 }
 
 

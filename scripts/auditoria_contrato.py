@@ -63,15 +63,14 @@ FORA_DO_CONTRATO = {
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do
-# tema congelado da seção 05 (acesso compartilhado e fila de aprovação), não
-# só os seis caminhos exatos do contrato — pega também uma implementação
-# equivalente pendurada num caminho diferente.
+# que continua congelado na seção 05 — o modo 2, senha compartilhada —, não só
+# o caminho exato do contrato: pega também uma implementação equivalente
+# pendurada num caminho diferente. O modo 3 (aprovação) saiu do congelamento
+# em 28/09/2026 por decisão do cliente; as cinco rotas dele são conferidas
+# como qualquer outra rota do contrato.
 PADROES_CONGELADOS = (
-    re.compile(r"/acesso"),
-    re.compile(r"/solicit"),
-    re.compile(r"/aprovac"),
-    re.compile(r"/fila"),
-    re.compile(r"/configuracao"),
+    re.compile(r"/senha"),
+    re.compile(r"senha[-_]?compartilhada"),
 )
 
 
@@ -195,10 +194,10 @@ def main() -> int:
             falhas.append(f"fora do contrato sem justificativa: {metodo} {rota}")
         print(f"{metodo:<7} {rota:<44} {motivo}")
 
-    print("\n--- seção 05 (congelada): nenhuma rota do tema pode existir ---")
+    print("\n--- seção 05, modo 2 (congelado): nenhuma rota de senha compartilhada pode existir ---")
     vazando = [f"{m} {c}" for (m, c) in reais if any(p.search(c) for p in PADROES_CONGELADOS)]
     falhas.extend(f"tema congelado exposto: {rota}" for rota in vazando)
-    print(f"    rotas com /acesso, /solicit, /aprovac, /fila ou /configuracao: {vazando or 'nenhuma'}")
+    print(f"    rotas com /senha ou senha-compartilhada: {vazando or 'nenhuma'}")
 
     a_implementar = sum(1 for e in entradas if e["situacao"] == "implementar")
     congeladas = len(entradas) - a_implementar

@@ -256,8 +256,10 @@ _CONTROLE = ("SAVEPOINT", "RELEASE", "ROLLBACK", "BEGIN", "COMMIT")
 
 # A consulta que resolve o cookie de admin em sessão. É UMA, igual em toda rota
 # do painel, e não pertence ao orçamento de nenhuma delas — contá-la faria o
-# teto da rota mudar se um dia a autenticação mudar de forma.
-_AUTENTICACAO = "admin_sessoes"
+# teto da rota mudar se um dia a autenticação mudar de forma. Mesma coisa para
+# o portão da loja (seção 05): uma leitura por chave primária de acesso_config
+# em toda rota de catálogo, antes da rota começar.
+_AUTENTICACAO = ("admin_sessoes", "acesso_config")
 
 
 @pytest.fixture
@@ -275,7 +277,7 @@ def contar_consultas():
 
         def registrar(conexao, cursor, instrucao, parametros, contexto, muitos):
             limpa = " ".join(instrucao.split())
-            if limpa.upper().startswith(_CONTROLE) or _AUTENTICACAO in limpa:
+            if limpa.upper().startswith(_CONTROLE) or any(t in limpa for t in _AUTENTICACAO):
                 return
             consultas.append(limpa)
 
