@@ -1,3 +1,8 @@
+# URL do banco vista de DENTRO da rede do compose (host "banco" = nome do servico
+# abaixo). NAO e o DATABASE_URL do .env, que usa "localhost" para uso fora do
+# container (Alembic rodado direto do host). Compartilhada por "migracao" e "api".
+x-database-url: &database-url postgresql+psycopg://${POSTGRES_USER:-vip_imports}:${POSTGRES_PASSWORD:-vip_imports}@banco:5432/${POSTGRES_DB:-vip_imports}
+
 services:
   banco:
     image: postgres:16
@@ -17,15 +22,39 @@ services:
       timeout: 5s
       retries: 10
 
+  # Aplica `alembic upgrade head` UMA vez e sai. A api so sobe depois que isto
+  # termina com sucesso (depends_on abaixo): banco desatualizado nunca chega a
+  # atender requisicao, e uma migracao que falha derruba o `up` com o erro a vista
+  # em vez de virar 500 em telas aleatorias. Fica fora do processo do uvicorn de
+  # proposito: o --reload reinicia a api a cada edicao e varios workers rodariam
+  # a migracao em paralelo; aqui existe exatamente um processo migrando.
+  # Migracao nova criada no host: `docker compose up -d` (ou `docker compose run
+  # --rm migracao`) aplica; nao precisa rebuildar a imagem.
+  migracao:
+    build: .
+    image: vip-imports-api
+    container_name: vip-imports-migracao
+    restart: "no"
+    environment:
+      DATABASE_URL: *database-url
+    volumes:
+      # src/ e migracoes/ vivem na imagem (COPY do Dockerfile) e ficavam congelados
+      # nela: arquivo novo no host era invisivel ao container ate alguem rebuildar.
+      # Os dois precisam vir do host: o env.py importa vip_api.modelos (src/).
+      - ./src:/app/src:ro
+      - ./migracoes:/app/migracoes:ro
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      banco:
+        condition: service_healthy
+
   api:
     build: .
+    image: vip-imports-api
     container_name: vip-imports-api
     restart: unless-stopped
     environment:
-      # Host "banco" (nome do servico acima na rede interna do compose) —
-      # NAO e o DATABASE_URL do .env, que usa "localhost" para uso fora do
-      # container (Alembic rodado direto do host).
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vip_imports}:${POSTGRES_PASSWORD:-vip_imports}@banco:5432/${POSTGRES_DB:-vip_imports}
+      DATABASE_URL: *database-url
       AMBIENTE: ${AMBIENTE:-desenvolvimento}
       ORIGENS_PERMITIDAS: ${ORIGENS_PERMITIDAS:-http://localhost:5173}
       NIVEL_LOG: ${NIVEL_LOG:-INFO}
@@ -39,6 +68,9 @@ services:
       # Monta o codigo fonte por cima do que foi copiado na imagem — junto
       # com --reload abaixo, edicao no host reinicia o processo sozinho.
       - ./src:/app/src
+      # Mesmo motivo do servico "migracao". Aqui sem :ro para que
+      # `docker compose exec api alembic ...` enxergue (e possa gerar) revisoes.
+      - ./migracoes:/app/migracoes
       # Imagem enviada pelo painel (upload de produto/banner). Volume nomeado,
       # nao bind mount: sobrevive a "docker compose down" e a rebuild da
       # imagem, e nao fica espalhado dentro da pasta do repo. Em producao,
@@ -53,6 +85,8 @@ services:
     depends_on:
       banco:
         condition: service_healthy
+      migracao:
+        condition: service_completed_successfully
 
 volumes:
   banco_dados:
