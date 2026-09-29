@@ -60,6 +60,16 @@ FORA_DO_CONTRATO = {
     ("POST", "/admin/cores"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
     ("PATCH", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
     ("DELETE", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
+    # Upload de imagem pelo painel (commit 4227441): devolve só a URL, que segue
+    # pelas rotas do contrato (POST /imagens, POST/PATCH /banners).
+    ("POST", "/admin/produtos/{produtoId}/imagens/upload"): "revisão upload de imagem; registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/banners/upload"): "revisão upload de imagem; registrada em docs/para-o-frontend.md",
+    # Fila de revisão da importação completa do Yupoo (commit c948995).
+    ("GET", "/admin/revisao/pendentes"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/revisao/publicados"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/revisao/imagem"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("DELETE", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do
