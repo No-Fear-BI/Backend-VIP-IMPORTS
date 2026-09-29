@@ -38,6 +38,13 @@ def listar(
         ),
     ),
     busca: str | None = Query(None, description="Filtra por nome do produto ou da marca."),
+    novidades: Literal["true", "false"] = Query(
+        "false",
+        description=(
+            "true = só produtos criados nos últimos 14 dias (página Novidades). "
+            "Combina com os demais filtros e com `ordem`."
+        ),
+    ),
     ordem: Literal["recentes", "nome"] = Query("recentes"),
     cursor: str | None = Query(None, description="Ausente na primeira página."),
     por_pagina: int = Query(
@@ -54,6 +61,7 @@ def listar(
             marca=marca,
             cor=cor,
             busca=busca,
+            novidades=novidades == "true",
             ordem=ordem,
             cursor=cursor,
             por_pagina=por_pagina,

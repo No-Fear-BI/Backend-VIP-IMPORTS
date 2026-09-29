@@ -13,6 +13,7 @@
     {"metodo":"DELETE","rota":"/admin/cores/{corId}","situacao":"implementada","handler":"cores_excluir","origem":"revisão 0007, pedido do cliente em 21/09/2026","documentacao":"para-o-frontend.md, Cores"}
   ],
   "parametros": [
+    {"metodo":"GET","rota":"/produtos","parametro":"novidades","descricao":"true = só produtos criados nos últimos 14 dias (janela rolante sobre criado_em). Combina com os demais filtros e com ordem; o cursor amarra o filtro. Só true/false, outro valor dá 400.","origem":"pedido do cliente em 29/09/2026"},
     {"metodo":"GET","rota":"/produtos","parametro":"cor","descricao":"Slugs de cor separados por vírgula, com OU entre eles (como marca).","origem":"revisão 0007"},
     {"metodo":"GET","rota":"/admin/produtos","parametro":"corId","descricao":"Produtos que têm esta cor na grade de variações, incluindo ocultos.","origem":"revisão 0007"},
     {"metodo":"PATCH","rota":"/admin/produtos/{produtoId}/variacoes","parametro":"corId","descricao":"Opcional em cada variação de cor. Com id, o nome vem da paleta; sem id, a cor é resolvida pelo slug de 'valor' e criada se faltar.","origem":"revisão 0007"}

@@ -80,3 +80,21 @@ reescrever a grade do que já está circulando.
 Vale para as três portas do mesmo caminho: exclusão de produto, remoção de uma
 variação e substituição do conjunto. Todas passam pela mesma função de serviço
 (`remover_variacoes`), com teste de regressão para cada uma.
+
+## Novidades contam a partir de `criado_em`
+
+Desde 29/09/2026 a página Novidades mostra só os produtos dos últimos 14 dias
+(`GET /produtos?novidades=true`). A janela conta a partir de `criado_em`, e não
+existe uma coluna `publicado_em`. Consequências aceitas:
+
+- Produto criado no painel como **oculto** e reexibido depois de mais de 14
+  dias **não volta** a Novidades: a data que vale é a da criação, não a da
+  publicação. O mesmo vale para um produto oculto e reexibido mais tarde.
+- Produto que veio da revisão conta a partir da aprovação, porque só nesse
+  momento ele passa a existir na tabela `produtos`.
+- A janela é rolante e calculada a cada consulta. Um produto que está prestes a
+  completar 14 dias pode sumir de Novidades entre duas páginas da mesma
+  paginação; o total informado na primeira página não é recalculado.
+
+Para "reiniciar" as 2 semanas de um produto, o caminho hoje é duplicar o
+produto no painel (o duplicado nasce oculto, com `criado_em` novo).

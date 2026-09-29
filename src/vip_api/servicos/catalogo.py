@@ -1,7 +1,7 @@
 """Listagem pública do catálogo: filtros, busca e paginação por cursor."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, and_, case, func, or_, select, tuple_
 from sqlalchemy.orm import Session
@@ -45,6 +45,16 @@ POR_PAGINA_MAXIMO = 48
 ORDEM_RECENTES = "recentes"
 ORDEM_NOME = "nome"
 
+# Regra do cliente (29/09/2026): produto fica NO MÁXIMO 14 dias em Novidades.
+# A janela é rolante e calculada na hora da consulta, a partir de `criado_em`:
+# sem tarefa agendada e sem coluna nova. Não altera nem apaga nada do produto.
+DIAS_NOVIDADE = 14
+
+
+def _agora() -> datetime:
+    """Relógio da janela de novidades. Função à parte para o teste fixá-lo."""
+    return datetime.now(timezone.utc)
+
 
 @dataclass(frozen=True)
 class FiltrosProduto:
@@ -55,6 +65,8 @@ class FiltrosProduto:
     # entre as duas, e não produto que tenha as duas ao mesmo tempo.
     cor: str | None = None
     busca: str | None = None
+    # Só os produtos criados nos últimos DIAS_NOVIDADE dias (página Novidades).
+    novidades: bool = False
     ordem: str = ORDEM_RECENTES
     cursor: str | None = None
     por_pagina: int = POR_PAGINA_PADRAO
@@ -77,7 +89,7 @@ def _ler_cursor(filtros: FiltrosProduto) -> dict | None:
         return None
 
     dados = exigir_formato_do_cursor(
-        decodificar_cursor(filtros.cursor), texto=("o", "v"), inteiros=("id", "t")
+        decodificar_cursor(filtros.cursor), texto=("o", "v"), inteiros=("id", "t", "n")
     )
     if {"o", "v", "id"} - dados.keys():
         raise AppError(
@@ -93,7 +105,24 @@ def _ler_cursor(filtros: FiltrosProduto) -> dict | None:
             mensagem="O cursor não corresponde à ordenação informada.",
             status_code=400,
         )
+    # O cursor também amarra o recorte de novidades: um cursor de ?novidades=true
+    # aplicado a uma consulta sem o filtro (ou o contrário) pularia ou repetiria
+    # itens. Cursor antigo, sem `n`, vale como "sem novidades".
+    if bool(dados.get("n", 0)) != filtros.novidades:
+        raise AppError(
+            codigo=CURSOR_INVALIDO,
+            mensagem="O cursor não corresponde ao filtro de novidades informado.",
+            status_code=400,
+        )
     return dados
+
+
+def _inicio_das_novidades(filtros: FiltrosProduto) -> datetime | None:
+    """Início da janela de novidades, ou None sem o filtro. Calculado UMA vez
+    por requisição, para a contagem e a página usarem o mesmo corte."""
+    if not filtros.novidades:
+        return None
+    return _agora() - timedelta(days=DIAS_NOVIDADE)
 
 
 def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
@@ -105,6 +134,7 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
         "marca_ids": None,
         "cor_ids": None,
         "marcas_da_busca": [],
+        "novidades_desde": None,
     }
 
     if filtros.colecao:
@@ -162,6 +192,9 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
 def _aplicar_filtros(stmt: Select, filtros: FiltrosProduto, ids: dict) -> Select:
     # Produto oculto some da rota inteira, em qualquer combinação de filtros.
     stmt = stmt.where(Produto.status != "oculto")
+
+    if ids["novidades_desde"] is not None:
+        stmt = stmt.where(Produto.criado_em >= ids["novidades_desde"])
 
     if ids["categoria_id"] is not None:
         # categoria_id já implica a coleção (a FK composta garante), então não
@@ -322,7 +355,9 @@ def _pagina_vazia(por_pagina: int) -> Pagina[ProdutoItem]:
     return Pagina[ProdutoItem](dados=[], paginacao=Paginacao(total=0, por_pagina=por_pagina))
 
 
-def _buscar_por_codigo_exato(sessao: Session, busca: str, por_pagina: int):
+def _buscar_por_codigo_exato(
+    sessao: Session, busca: str, por_pagina: int, novidades_desde: datetime | None = None
+):
     """Se o termo é um código de produto, devolve aquele produto sozinho.
     É como o atendimento usa o campo quando o cliente manda um código pelo
     WhatsApp — procurar "CHN-0042" e receber 40 resultados parecidos é ruído."""
@@ -331,6 +366,8 @@ def _buscar_por_codigo_exato(sessao: Session, busca: str, por_pagina: int):
         .where(Produto.status != "oculto", Produto.codigo == busca.strip().upper())
         .limit(1)
     )
+    if novidades_desde is not None:
+        interna = interna.where(Produto.criado_em >= novidades_desde)
     linha = sessao.execute(_envolver_com_juncoes(interna.subquery("p"))).first()
     if linha is None:
         return None
@@ -344,15 +381,19 @@ def listar_produtos(sessao: Session, filtros: FiltrosProduto) -> Pagina[ProdutoI
 
     por_pagina = max(1, min(filtros.por_pagina, POR_PAGINA_MAXIMO))
     cursor = _ler_cursor(filtros)
+    novidades_desde = _inicio_das_novidades(filtros)
 
     if filtros.busca and cursor is None:
-        pagina_codigo = _buscar_por_codigo_exato(sessao, filtros.busca, por_pagina)
+        pagina_codigo = _buscar_por_codigo_exato(
+            sessao, filtros.busca, por_pagina, novidades_desde
+        )
         if pagina_codigo is not None:
             return pagina_codigo
 
     ids = _resolver_ids(sessao, filtros)
     if ids is None:
         return _pagina_vazia(por_pagina)
+    ids["novidades_desde"] = novidades_desde
 
     # O total é caro e não muda de página para página com os mesmos filtros:
     # conta uma vez na primeira e viaja dentro do cursor. Se o filtro mudar,
@@ -378,7 +419,13 @@ def listar_produtos(sessao: Session, filtros: FiltrosProduto) -> Pagina[ProdutoI
             else ultima.criado_em.isoformat()
         )
         proximo_cursor = codificar_cursor(
-            {"o": filtros.ordem, "v": valor, "id": ultima.id, "t": total}
+            {
+                "o": filtros.ordem,
+                "v": valor,
+                "id": ultima.id,
+                "t": total,
+                "n": int(filtros.novidades),
+            }
         )
 
     return Pagina[ProdutoItem](

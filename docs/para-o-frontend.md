@@ -248,3 +248,14 @@ O cliente da No Fear decidiu ligar o modo 3 da seção 05: quem não foi aprovad
 - **`PATCH /api/v1/admin/configuracao/acesso`** só grava a mensagem de bloqueio; **não liga nem desliga o portão**. É um PATCH parcial: `{ "mensagemBloqueio": "..." }`. `mensagemBloqueio: null` apaga a mensagem. `modo: "aprovacao"` é aceito e não muda nada; `"aberto"` e `senha_compartilhada` são recusados com 400. Responde com `modo`, `mensagemBloqueio` e `atualizadoEm`. **Não existe `GET` administrativo da configuração**: o painel lê o modo e a mensagem atuais em `GET /acesso/estado`, que é público. É a mesma exceção da tela de Destaques, que lê a home pública.
 - **E-mails pré-aprovados (29/09/2026).** Os e-mails listados em `EMAILS_PRE_APROVADOS` (variável de ambiente, separados por vírgula) entram sempre na loja fechada. Quem se identifica com um deles nasce `aprovado` (ou vira `aprovado`, se já existia pendente ou recusado), e o painel não consegue barrá-lo: `podeNavegar` é `true` mesmo se a equipe recusar ou revogar. Para o frontend nada muda no contrato. **Limitação conhecida, decidida pelo cliente:** a identificação continua sem senha, então quem digitar um desses e-mails entra.
 - **Códigos de erro novos:** `ACESSO_PENDENTE` (403) e `ACESSO_RECUSADO` (403).
+
+## Novidades: janela de 14 dias (29/09/2026)
+
+Regra decidida com o cliente: todo produto fica **no máximo 14 dias** na página Novidades. Depois disso ele sai de lá e continua aparecendo normalmente nas categorias dele, em `/todos`, na busca e nas páginas de marca e coleção. Nada é apagado nem alterado no produto: é só um recorte por data.
+
+- **`GET /api/v1/produtos?novidades=true`** devolve só os produtos criados nos últimos 14 dias (`criado_em >= agora - 14 dias`), sem os ocultos, como toda a rota. A janela é **rolante**, calculada na hora da consulta: não há tarefa agendada nem coluna nova. A constante é `DIAS_NOVIDADE` em `servicos/catalogo.py`.
+- **Aceita só `true` ou `false`.** Qualquer outro valor devolve o 400 de validação de sempre. Sem o parâmetro, ou com `false`, nada muda.
+- **Combina com todos os outros filtros** (`colecao`, `categoria`, `marca`, `cor`, `busca`) e com `ordem`.
+- **Paginação:** `total` e `proximoCursor` valem dentro do recorte. O cursor guarda o filtro: um cursor de `?novidades=true` usado numa consulta sem ele (ou o contrário) devolve 400 `CURSOR_INVALIDO`. Ao trocar o filtro, recomece da primeira página.
+- **Produto novo:** para o produto criado no painel, o início da janela é a data de criação; para o que veio da revisão, é a data da aprovação (só ali ele entra na tabela `produtos`).
+- **`GET /home` não muda.** Os "destaques" da home são escolha manual da equipe (`destaque = true`, com ordem própria), não uma vitrine de novidades.
