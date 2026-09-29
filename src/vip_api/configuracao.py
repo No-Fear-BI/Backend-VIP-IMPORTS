@@ -109,7 +109,7 @@ class Configuracao(BaseSettings):
         if self.AMBIENTE == "producao" and not self.WHATSAPP_LOJA.isdigit():
             raise RuntimeError(
                 "WHATSAPP_LOJA precisa ser o número da loja em formato "
-                "internacional, só dígitos (ex.: 5541984975960). Sem ele o "
+                "internacional, só dígitos (ex.: 554196941824). Sem ele o "
                 "link de cada seleção enviada aponta para lugar nenhum."
             )
         return self
