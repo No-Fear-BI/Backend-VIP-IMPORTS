@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 
 from vip_api.erros.codigos import DADOS_INVALIDOS
 from vip_api.erros.excecoes import AppError
+from vip_api.modelos.acesso import AcessoSolicitacao
 from vip_api.modelos.cliente import Cliente, ClienteSessao
-from vip_api.servicos.acesso import MODO_APROVACAO, modo_atual
+from vip_api.servicos.acesso import MODO_APROVACAO, email_pre_aprovado, modo_atual
 from vip_api.seguranca.tokens import gerar_token, hash_do_token
 
 DURACAO_SESSAO = timedelta(days=90)
@@ -61,13 +62,39 @@ def identificar_cliente(sessao: Session, email: str) -> Cliente:
         # PENDENTE — senão o default 'aprovado' da coluna deixaria qualquer
         # e-mail novo passar pelo portão. Só na criação: quem já está
         # cadastrado nunca é trancado por o modo ter sido ligado depois.
-        if modo_atual(sessao) == MODO_APROVACAO:
+        # E-mail pré-aprovado (EMAILS_PRE_APROVADOS) nasce aprovado.
+        if modo_atual(sessao) == MODO_APROVACAO and not email_pre_aprovado(normalizado):
             cliente.acesso_status = "pendente"
         sessao.add(cliente)
         sessao.commit()
         sessao.refresh(cliente)
+    elif email_pre_aprovado(normalizado) and cliente.acesso_status != "aprovado":
+        _promover_pre_aprovado(sessao, cliente)
 
     return cliente
+
+
+def _promover_pre_aprovado(sessao: Session, cliente: Cliente) -> None:
+    """Pré-aprovado que já existia pendente ou recusado passa a aprovado, na
+    mesma transação. O pedido pendente, se houver, é fechado como aprovado sem
+    admin decisor (decidido_por_admin_id é nulo por desenho): a fila do painel
+    não fica com um pedido que ninguém precisa decidir. Nenhuma linha nova de
+    histórico é criada."""
+    agora = datetime.now(timezone.utc)
+    pendente = sessao.scalar(
+        select(AcessoSolicitacao).where(
+            AcessoSolicitacao.cliente_id == cliente.id,
+            AcessoSolicitacao.situacao == "pendente",
+        )
+    )
+    if pendente is not None:
+        pendente.situacao = "aprovado"
+        pendente.motivo = "E-mail pré-aprovado"
+        pendente.decidido_em = agora
+    cliente.acesso_status = "aprovado"
+    cliente.atualizado_em = agora
+    sessao.commit()
+    sessao.refresh(cliente)
 
 
 def criar_sessao_cliente(

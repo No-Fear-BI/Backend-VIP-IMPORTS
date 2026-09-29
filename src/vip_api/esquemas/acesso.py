@@ -5,10 +5,12 @@ from typing import Literal
 
 from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
 
-# Só os dois modos que têm rota. `senha_compartilhada` (modo 2) existe no
-# enum do banco, mas POST /acesso/senha não foi construída: aceitar o modo
-# aqui ligaria um portão sem porta. O Pydantic recusa com 400.
-ModoAceito = Literal["aberto", "aprovacao"]
+# A loja é sempre fechada (decisão do cliente, revisão 0014): o único modo que
+# o painel pode gravar é 'aprovacao', e gravá-lo não muda nada. 'aberto' e
+# `senha_compartilhada` (modo 2, sem rota POST /acesso/senha) existem no enum
+# do banco, mas aceitá-los aqui abriria a loja ou ligaria um portão sem porta.
+# O Pydantic recusa com 400.
+ModoAceito = Literal["aprovacao"]
 Decisao = Literal["aprovado", "recusado"]
 
 
@@ -17,7 +19,9 @@ class EstadoAcesso(EsquemaResposta):
 
     `situacao` é null sem sessão de cliente. `solicitacaoPendente` separa o
     "pendente que ainda não pediu" do "pedido enviado, aguardando".
-    `mensagemBloqueio` vem sempre (null se o painel não escreveu nenhuma)."""
+    `mensagemBloqueio` vem sempre (null se o painel não escreveu nenhuma).
+    `podeSolicitar` é false só na espera das recusas seguidas; `bloqueadoAte` é
+    a data em que volta a poder pedir (null fora da espera)."""
 
     modo: str
     pode_navegar: bool
@@ -25,6 +29,8 @@ class EstadoAcesso(EsquemaResposta):
     situacao: str | None = None
     solicitacao_pendente: bool
     mensagem_bloqueio: str | None = None
+    pode_solicitar: bool = True
+    bloqueado_ate: datetime | None = None
 
 
 class SolicitarAcessoEntrada(EsquemaEntrada):

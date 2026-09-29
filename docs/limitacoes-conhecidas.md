@@ -42,6 +42,16 @@ identificar o cliente e abrir a sessão.
   não valeria nada; e sem tratar o cabeçalho, todos os visitantes chegariam com
   o IP do proxy e o primeiro que estourasse o limite trancaria o site inteiro.
 
+## E-mail pré-aprovado entra na loja fechada sem aprovação
+
+Desde 29/09/2026 a loja é fechada o tempo todo, e cliente novo espera a
+aprovação da equipe. Os e-mails listados em `EMAILS_PRE_APROVADOS` são a
+exceção: entram sempre, e o painel não os barra. Como a identificação é só por
+e-mail, **quem digitar um endereço dessa lista entra na loja**, sem senha e sem
+confirmação. É a mesma limitação da seção acima aplicada ao portão, aceita pelo
+cliente. A lista mora no ambiente (`.env`), nunca no código; para tirar o
+acesso de alguém, remova o e-mail dela e reinicie a API.
+
 ## Mexer nas variações mexe no carrinho de quem já escolheu
 
 Quando o painel remove uma variação — tirando um tamanho da grade, trocando o

@@ -7,19 +7,25 @@ Duas fontes, cada uma com um papel (docs/modelagem-banco.md, 4.17 e 4.18):
 - `acesso_solicitacoes` é o histórico auditável: quem pediu, com que dados,
   quem decidiu e quando. Toda decisão grava as duas coisas na mesma transação.
 
-`acesso_config` é linha única (id = 1), semeada em 'aberto' pela revisão 0013.
-Linha ausente é tratada como 'aberto': falhar fechado aqui trancaria a loja
-inteira por causa de um banco mal semeado, e trancar a loja é decisão do
-painel, nunca de um acidente.
+`acesso_config` é linha única (id = 1), semeada em 'aprovacao' pela revisão
+0014: a loja é FECHADA o tempo todo, por decisão do cliente. Linha ausente
+também conta como fechado (falha fechada): um banco mal semeado não pode abrir
+a loja para quem não foi liberado. O valor 'aberto' continua no enum do banco,
+mas nenhuma rota o grava.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from vip_api.erros.codigos import ACESSO_RECUSADO, CLIENTE_NAO_ENCONTRADO, DADOS_INVALIDOS
+from vip_api.configuracao import configuracao
+from vip_api.erros.codigos import (
+    ACESSO_EM_ESPERA,
+    CLIENTE_NAO_ENCONTRADO,
+    DADOS_INVALIDOS,
+)
 from vip_api.erros.excecoes import AppError
 from vip_api.esquemas.acesso import (
     ConfiguracaoAcesso,
@@ -39,6 +45,15 @@ ID_CONFIG = 1
 POR_PAGINA_PADRAO = 20
 POR_PAGINA_MAXIMO = 100
 
+# Recusas seguidas (desde a última aprovação) que fecham a porta por um tempo.
+# Uma aprovação zera a contagem; recusar de novo depois da espera reinicia os
+# dias, porque a espera é contada da recusa MAIS RECENTE.
+RECUSAS_PARA_ESPERA = 3
+DIAS_DE_ESPERA = 3
+
+# Brasil sem horário de verão desde 2019: offset fixo evita depender de tzdata.
+FUSO_LOJA = timezone(timedelta(hours=-3))
+
 MENSAGEM_PADRAO_PENDENTE = "Seu acesso à loja está aguardando liberação da equipe."
 MENSAGEM_PADRAO_RECUSADO = "Seu acesso à loja não foi liberado."
 
@@ -49,11 +64,23 @@ def obter_config(sessao: Session) -> AcessoConfig | None:
 
 def modo_atual(sessao: Session) -> str:
     config = obter_config(sessao)
-    return config.modo if config is not None else MODO_ABERTO
+    return config.modo if config is not None else MODO_APROVACAO
 
 
 def exige_aprovacao(config: AcessoConfig | None) -> bool:
-    return config is not None and config.modo == MODO_APROVACAO
+    return config is None or config.modo == MODO_APROVACAO
+
+
+def email_pre_aprovado(email: str) -> bool:
+    """O e-mail está em EMAILS_PRE_APROVADOS? Compara sem caixa nem espaços.
+    Única fonte da regra: todo o resto chama esta função."""
+    return (email or "").strip().lower() in configuracao.EMAILS_PRE_APROVADOS
+
+
+def cliente_liberado(cliente: Cliente) -> bool:
+    """Passa pelo portão: aprovado pela equipe OU e-mail pré-aprovado. O
+    pré-aprovado entra mesmo se o painel o recusar ou revogar depois."""
+    return cliente.acesso_status == "aprovado" or email_pre_aprovado(cliente.email)
 
 
 def _solicitacao_pendente(sessao: Session, cliente_id: int) -> AcessoSolicitacao | None:
@@ -65,18 +92,57 @@ def _solicitacao_pendente(sessao: Session, cliente_id: int) -> AcessoSolicitacao
     )
 
 
+def _bloqueado_ate(sessao: Session, cliente_id: int, agora: datetime | None = None) -> datetime | None:
+    """Fim da espera por recusas seguidas, ou None se o cliente pode pedir.
+
+    Conta as recusas DEPOIS da última aprovação (todas, se nunca foi
+    aprovado). Com RECUSAS_PARA_ESPERA ou mais, a espera termina
+    DIAS_DE_ESPERA dias depois do `decidido_em` da mais recente.
+
+    LIMITAÇÃO CONHECIDA, aceita por ora: revogar o acesso de quem já estava
+    aprovado grava uma linha 'recusado' (ver `decidir_acesso`), e ela ENTRA na
+    contagem como qualquer recusa. Distinguir revogação de recusa exigiria um
+    campo novo em `acesso_solicitacoes` (ex.: origem/tipo da decisão).
+    """
+    agora = agora or datetime.now(timezone.utc)
+    ultima_aprovacao = sessao.scalar(
+        select(func.max(AcessoSolicitacao.decidido_em)).where(
+            AcessoSolicitacao.cliente_id == cliente_id,
+            AcessoSolicitacao.situacao == "aprovado",
+        )
+    )
+    recusas = select(
+        func.count(), func.max(AcessoSolicitacao.decidido_em)
+    ).where(
+        AcessoSolicitacao.cliente_id == cliente_id,
+        AcessoSolicitacao.situacao == "recusado",
+    )
+    if ultima_aprovacao is not None:
+        recusas = recusas.where(AcessoSolicitacao.decidido_em > ultima_aprovacao)
+    total, ultima_recusa = sessao.execute(recusas).one()
+
+    if total < RECUSAS_PARA_ESPERA or ultima_recusa is None:
+        return None
+    libera_em = ultima_recusa + timedelta(days=DIAS_DE_ESPERA)
+    return libera_em if libera_em > agora else None
+
+
 def montar_estado(sessao: Session, cliente: Cliente | None) -> EstadoAcesso:
     config = obter_config(sessao)
     situacao = cliente.acesso_status if cliente is not None else None
+    bloqueado_ate = _bloqueado_ate(sessao, cliente.id) if cliente is not None else None
     return EstadoAcesso(
-        modo=config.modo if config is not None else MODO_ABERTO,
-        pode_navegar=not exige_aprovacao(config) or situacao == "aprovado",
+        modo=config.modo if config is not None else MODO_APROVACAO,
+        pode_navegar=not exige_aprovacao(config)
+        or (cliente is not None and cliente_liberado(cliente)),
         identificado=cliente is not None,
         situacao=situacao,
         solicitacao_pendente=(
             cliente is not None and _solicitacao_pendente(sessao, cliente.id) is not None
         ),
         mensagem_bloqueio=config.mensagem_bloqueio if config is not None else None,
+        pode_solicitar=bloqueado_ate is None,
+        bloqueado_ate=bloqueado_ate,
     )
 
 
@@ -85,21 +151,37 @@ def solicitar_acesso(sessao: Session, cliente: Cliente) -> EstadoAcesso:
     estado, nunca uma segunda linha e nunca 500.
 
     Não cria nada quando não há o que pedir — loja fora do modo aprovação, ou
-    cliente já aprovado. Cliente RECUSADO não reabre pedido sozinho: o índice
-    permite várias recusadas no histórico, mas deixar o recusado pedir de novo
-    a cada clique enche a fila da equipe. Quem reabre é o painel.
+    cliente já aprovado. Cliente RECUSADO pode pedir de novo, e o pedido o
+    devolve a 'pendente'; mas RECUSAS_PARA_ESPERA recusas seguidas o deixam
+    DIAS_DE_ESPERA dias sem poder pedir (ACESSO_EM_ESPERA, 403), para não
+    encher a fila da equipe.
     """
     config = obter_config(sessao)
-    if not exige_aprovacao(config) or cliente.acesso_status == "aprovado":
+    if not exige_aprovacao(config) or cliente_liberado(cliente):
         return montar_estado(sessao, cliente)
 
     if cliente.acesso_status == "recusado":
-        raise AppError(
-            codigo=ACESSO_RECUSADO,
-            mensagem=config.mensagem_bloqueio or MENSAGEM_PADRAO_RECUSADO,
-            status_code=403,
-            detalhes={"situacao": "recusado"},
-        )
+        # Trava o cliente: a decisão do painel também trava, e a espera é
+        # lida depois de saber que ninguém decidiu no meio.
+        sessao.refresh(cliente, with_for_update=True)
+        if cliente.acesso_status == "aprovado":
+            sessao.commit()
+            return montar_estado(sessao, cliente)
+        bloqueado_ate = _bloqueado_ate(sessao, cliente.id)
+        if bloqueado_ate is not None:
+            sessao.rollback()
+            quando = bloqueado_ate.astimezone(FUSO_LOJA).strftime("%d/%m/%Y às %H:%M")
+            raise AppError(
+                codigo=ACESSO_EM_ESPERA,
+                mensagem=f"Você poderá pedir acesso de novo a partir de {quando}.",
+                status_code=403,
+                detalhes={
+                    "situacao": "recusado",
+                    "bloqueadoAte": bloqueado_ate.isoformat(),
+                },
+            )
+        cliente.acesso_status = "pendente"
+        cliente.atualizado_em = datetime.now(timezone.utc)
 
     if _solicitacao_pendente(sessao, cliente.id) is None:
         # Dois pedidos simultâneos passam os dois pela checagem acima; o
@@ -208,7 +290,8 @@ def decidir_acesso(
 def definir_configuracao(
     sessao: Session, dados: ConfiguracaoAcessoEntrada, admin_id: int
 ) -> ConfiguracaoAcesso:
-    """PATCH parcial do modo e da mensagem de bloqueio."""
+    """PATCH parcial da configuração. A loja é sempre fechada: o esquema só
+    aceita o modo 'aprovacao', então na prática só a mensagem de bloqueio muda."""
     informados = dados.model_fields_set
     if "modo" in informados and dados.modo is None:
         raise AppError(
@@ -220,7 +303,7 @@ def definir_configuracao(
 
     config = sessao.get(AcessoConfig, ID_CONFIG, with_for_update=True)
     if config is None:
-        config = AcessoConfig(id=ID_CONFIG, modo=MODO_ABERTO)
+        config = AcessoConfig(id=ID_CONFIG, modo=MODO_APROVACAO)
         sessao.add(config)
 
     if "modo" in informados:

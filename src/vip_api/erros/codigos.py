@@ -40,6 +40,9 @@ COR_EM_CONFLITO = "COR_EM_CONFLITO"
 # "seu acesso não foi liberado". Sem sessão continua NAO_IDENTIFICADO (401).
 ACESSO_PENDENTE = "ACESSO_PENDENTE"
 ACESSO_RECUSADO = "ACESSO_RECUSADO"
+# Recusado que estourou o limite de recusas seguidas e ainda está na espera
+# para pedir de novo (servicos/acesso.py). `detalhes.bloqueadoAte` traz a data.
+ACESSO_EM_ESPERA = "ACESSO_EM_ESPERA"
 EXCESSO_TENTATIVAS = "EXCESSO_TENTATIVAS"
 ERRO_INTERNO = "ERRO_INTERNO"
 

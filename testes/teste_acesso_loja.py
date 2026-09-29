@@ -3,18 +3,20 @@
 O que não pode quebrar, em ordem de estrago:
 1. O painel NUNCA fica atrás do portão — senão a equipe se tranca do lado de
    fora e não consegue nem desligar o portão.
-2. O site nasce aberto: a linha de acesso_config existe, em 'aberto'.
+2. A loja nasce FECHADA: a migração 0014 grava 'aprovacao' em acesso_config.
 3. Quem já estava cadastrado quando o portão foi ligado continua entrando.
 4. Pedir liberação duas vezes não estoura (índice único de uma pendente).
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
+from vip_api.banco import engine
+from vip_api.configuracao import Configuracao, configuracao
 from vip_api.dependencias.acesso import exigir_acesso_liberado
 from vip_api.modelos.acesso import AcessoConfig, AcessoSolicitacao
 from vip_api.modelos.cliente import Cliente
@@ -94,10 +96,12 @@ def _pendentes(sessao, cliente_id: int) -> int:
 # --- semente e ponto de partida ------------------------------------------------
 
 
-def teste_a_migracao_semeia_a_config_no_modo_aberto(sessao):
-    config = sessao.get(AcessoConfig, 1)
-    assert config is not None, "a revisão 0013 precisa semear a linha única de acesso_config"
-    assert config.modo == "aberto"
+def teste_a_migracao_semeia_a_config_no_modo_aprovacao():
+    # Conexão à parte: a transação do teste abre a loja pela fixture do
+    # conftest, então só uma conexão fora dela enxerga o que a migração gravou.
+    with engine.connect() as conexao:
+        modo = conexao.scalar(text("SELECT modo FROM acesso_config WHERE id = 1"))
+    assert modo == "aprovacao", "a revisão 0014 precisa deixar a loja fechada"
 
 
 def teste_cliente_novo_nasce_aprovado_por_padrao(sessao):
@@ -108,7 +112,7 @@ def teste_cliente_novo_nasce_aprovado_por_padrao(sessao):
     assert pessoa.acesso_status == "aprovado"
 
 
-# --- modo aberto não barra nada ------------------------------------------------
+# --- modo aberto (mecanismo interno, só nos testes: ver conftest) ---------------
 
 
 def teste_modo_aberto_nao_barra_nenhuma_rota_publica(sem_sessao, app_de_teste, sessao):
@@ -287,13 +291,26 @@ def teste_painel_nunca_e_barrado_pelo_portao(admin_logado, app_de_teste, sessao)
         assert _codigo_do_erro(resposta) not in CODIGOS_DO_PORTAO, f"GET {caminho} barrado pelo portão"
 
 
-def teste_admin_desliga_o_portao_com_ele_ligado(admin_logado, sem_sessao, sessao):
+def teste_admin_nao_consegue_abrir_a_loja(admin_logado, sem_sessao, sessao):
     _ligar_aprovacao(sessao)
     assert sem_sessao.get("/api/v1/home").status_code == 401
 
     resposta = admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
-    assert resposta.status_code == 200
-    assert sem_sessao.get("/api/v1/home").status_code == 200
+    assert resposta.status_code == 400
+    assert sessao.get(AcessoConfig, 1).modo == "aprovacao"
+    assert sem_sessao.get("/api/v1/home").status_code == 401
+
+
+def teste_sem_linha_de_config_a_loja_continua_fechada(sem_sessao, sessao):
+    sessao.execute(text("DELETE FROM acesso_config WHERE id = 1"))
+    sessao.commit()
+    sessao.expire_all()
+    sessao.expunge_all()
+
+    assert sem_sessao.get("/api/v1/home").status_code == 401
+    estado = sem_sessao.get("/api/v1/acesso/estado").json()
+    assert estado["modo"] == "aprovacao"
+    assert estado["podeNavegar"] is False
 
 
 # --- POST /acesso/solicitar ------------------------------------------------------
@@ -357,13 +374,134 @@ def teste_solicitar_aprovado_ou_modo_aberto_nao_cria_nada(cliente_logado, app_de
     assert _pendentes(sessao, cliente.id) == 0
 
 
-def teste_recusado_nao_reabre_pedido_sozinho(app_de_teste, sessao):
+def _historico(sessao, cliente: Cliente, *decisoes: tuple[str, int]) -> None:
+    """Grava decisões já tomadas, do mais antigo para o mais novo. Cada par é
+    (situacao, dias atrás)."""
+    agora = datetime.now(timezone.utc)
+    for situacao, dias_atras in decisoes:
+        sessao.add(
+            AcessoSolicitacao(
+                cliente_id=cliente.id,
+                email=cliente.email,
+                situacao=situacao,
+                decidido_em=agora - timedelta(days=dias_atras),
+            )
+        )
+    sessao.commit()
+
+
+def teste_recusado_com_menos_de_tres_recusas_pede_de_novo(app_de_teste, sessao):
     recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    _historico(sessao, recusado, ("recusado", 2), ("recusado", 1))
     _ligar_aprovacao(sessao)
-    resposta = _logar(app_de_teste, sessao, recusado).post("/api/v1/acesso/solicitar", json={})
+    http = _logar(app_de_teste, sessao, recusado)
+
+    antes = http.get("/api/v1/acesso/estado").json()
+    assert antes["podeSolicitar"] is True
+    assert antes["bloqueadoAte"] is None
+
+    resposta = http.post("/api/v1/acesso/solicitar", json={})
+    assert resposta.status_code == 200
+    assert resposta.json()["solicitacaoPendente"] is True
+    assert resposta.json()["situacao"] == "pendente"
+    assert _pendentes(sessao, recusado.id) == 1
+
+
+def teste_tres_recusas_seguidas_seguram_o_pedido(app_de_teste, sessao):
+    recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    _historico(sessao, recusado, ("recusado", 2), ("recusado", 1), ("recusado", 1))
+    _ligar_aprovacao(sessao)
+    http = _logar(app_de_teste, sessao, recusado)
+
+    estado = http.get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is False
+    assert estado["bloqueadoAte"] is not None
+    assert estado["situacao"] == "recusado"
+
+    resposta = http.post("/api/v1/acesso/solicitar", json={})
     assert resposta.status_code == 403
-    assert resposta.json()["erro"]["codigo"] == "ACESSO_RECUSADO"
+    erro = resposta.json()["erro"]
+    assert erro["codigo"] == "ACESSO_EM_ESPERA"
+    assert re.search(r"\d{2}/\d{2}/\d{4}", erro["mensagem"])
+    assert datetime.fromisoformat(erro["detalhes"]["bloqueadoAte"]) == datetime.fromisoformat(
+        estado["bloqueadoAte"]
+    )
     assert _pendentes(sessao, recusado.id) == 0
+    sessao.refresh(recusado)
+    assert recusado.acesso_status == "recusado"
+
+
+def teste_espera_de_tres_dias_conta_da_recusa_mais_recente(app_de_teste, sessao):
+    recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    # a mais recente tem 2 dias: ainda faltam ~1 dia, mesmo com as outras antigas
+    _historico(sessao, recusado, ("recusado", 30), ("recusado", 20), ("recusado", 2))
+    _ligar_aprovacao(sessao)
+    estado = _logar(app_de_teste, sessao, recusado).get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is False
+
+
+def teste_depois_de_tres_dias_pede_de_novo(app_de_teste, sessao):
+    recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    _historico(sessao, recusado, ("recusado", 6), ("recusado", 5), ("recusado", 4))
+    _ligar_aprovacao(sessao)
+    http = _logar(app_de_teste, sessao, recusado)
+
+    assert http.get("/api/v1/acesso/estado").json()["podeSolicitar"] is True
+    resposta = http.post("/api/v1/acesso/solicitar", json={})
+    assert resposta.status_code == 200
+    assert resposta.json()["solicitacaoPendente"] is True
+    assert _pendentes(sessao, recusado.id) == 1
+
+
+def teste_recusar_de_novo_depois_da_espera_reinicia_os_dias(admin_logado, app_de_teste, sessao):
+    recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    _historico(sessao, recusado, ("recusado", 6), ("recusado", 5), ("recusado", 4))
+    _ligar_aprovacao(sessao)
+    http = _logar(app_de_teste, sessao, recusado)
+    http.post("/api/v1/acesso/solicitar", json={})
+
+    admin_logado.patch(f"/api/v1/admin/acesso/{recusado.id}", json={"situacao": "recusado"})
+
+    estado = http.get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is False
+    libera = datetime.fromisoformat(estado["bloqueadoAte"])
+    assert timedelta(days=2, hours=23) < libera - datetime.now(timezone.utc) <= timedelta(days=3)
+
+
+def teste_aprovacao_no_meio_zera_a_contagem(app_de_teste, sessao):
+    cliente = _novo_cliente(sessao, "voltou@teste.local", "recusado")
+    # 3 recusas, aprovado, e só 2 recusas depois: a contagem recomeçou
+    _historico(
+        sessao,
+        cliente,
+        ("recusado", 9),
+        ("recusado", 8),
+        ("recusado", 7),
+        ("aprovado", 6),
+        ("recusado", 2),
+        ("recusado", 1),
+    )
+    _ligar_aprovacao(sessao)
+    http = _logar(app_de_teste, sessao, cliente)
+
+    estado = http.get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is True
+    assert estado["bloqueadoAte"] is None
+    assert http.post("/api/v1/acesso/solicitar", json={}).status_code == 200
+
+
+def teste_nunca_aprovado_conta_todas_as_recusas(app_de_teste, sessao):
+    cliente = _novo_cliente(sessao, "nunca@teste.local", "recusado")
+    _historico(sessao, cliente, ("recusado", 50), ("recusado", 40), ("recusado", 1))
+    _ligar_aprovacao(sessao)
+    estado = _logar(app_de_teste, sessao, cliente).get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is False
+
+
+def teste_estado_sem_sessao_pode_solicitar(sem_sessao):
+    estado = sem_sessao.get("/api/v1/acesso/estado").json()
+    assert estado["podeSolicitar"] is True
+    assert estado["bloqueadoAte"] is None
 
 
 def teste_estado_de_quem_pediu(app_de_teste, sessao):
@@ -379,6 +517,8 @@ def teste_estado_de_quem_pediu(app_de_teste, sessao):
         "situacao": "pendente",
         "solicitacaoPendente": False,
         "mensagemBloqueio": "Aguarde a liberação.",
+        "podeSolicitar": True,
+        "bloqueadoAte": None,
     }
     http.post("/api/v1/acesso/solicitar", json={})
     assert http.get("/api/v1/acesso/estado").json()["solicitacaoPendente"] is True
@@ -489,14 +629,111 @@ def teste_configuracao_grava_quem_mudou_e_a_mensagem(admin_logado, sessao, admin
     assert config.atualizado_por_admin_id == administrador.id
 
 
-@pytest.mark.parametrize("corpo", [{"modo": "senha_compartilhada"}, {"modo": None}, {"modo": "fechado"}])
+@pytest.mark.parametrize(
+    "corpo",
+    [{"modo": "aberto"}, {"modo": "senha_compartilhada"}, {"modo": None}, {"modo": "fechado"}],
+)
 def teste_configuracao_recusa_modo_sem_rota_ou_invalido(admin_logado, sessao, corpo):
+    antes = sessao.get(AcessoConfig, 1).modo
     resposta = admin_logado.patch("/api/v1/admin/configuracao/acesso", json=corpo)
     assert resposta.status_code == 400
-    assert sessao.get(AcessoConfig, 1).modo == "aberto"
+    assert sessao.get(AcessoConfig, 1).modo == antes
 
 
 def teste_cliente_nao_mexe_na_configuracao(cliente_logado):
-    resposta = cliente_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
+    resposta = cliente_logado.patch("/api/v1/admin/configuracao/acesso", json={"mensagemBloqueio": "x"})
     assert resposta.status_code == 403
     assert resposta.json()["erro"]["codigo"] == "SEM_PERMISSAO"
+
+
+# --- e-mail pré-aprovado (EMAILS_PRE_APROVADOS) --------------------------------------
+
+EMAIL_VIP = "vip@teste.local"
+
+
+def _pre_aprovar(monkeypatch, *emails: str) -> None:
+    # Injeta a setting sem depender do .env real (já normalizada, como o
+    # validador da Configuracao entrega).
+    monkeypatch.setattr(configuracao, "EMAILS_PRE_APROVADOS", list(emails))
+
+
+def teste_a_lista_de_pre_aprovados_e_vazia_por_padrao_e_normaliza_o_env():
+    assert Configuracao.model_fields["EMAILS_PRE_APROVADOS"].default == []
+    lida = Configuracao(
+        DATABASE_URL="postgresql+psycopg://u:s@localhost/db",
+        EMAILS_PRE_APROVADOS="  A@X.com, ,b@Y.COM ,",
+    )
+    assert lida.EMAILS_PRE_APROVADOS == ["a@x.com", "b@y.com"]
+
+
+def teste_pre_aprovado_nasce_aprovado_e_entra_com_o_portao_ligado(sem_sessao, sessao, monkeypatch):
+    _pre_aprovar(monkeypatch, EMAIL_VIP)
+    _ligar_aprovacao(sessao)
+
+    resposta = sem_sessao.post("/api/v1/clientes/identificar", json={"email": "  VIP@Teste.LOCAL "})
+    assert resposta.status_code == 200
+    novo = sessao.scalar(select(Cliente).where(Cliente.email == EMAIL_VIP))
+    assert novo.acesso_status == "aprovado"
+    assert sem_sessao.get("/api/v1/home").status_code == 200
+
+
+def teste_email_fora_da_lista_continua_pendente(sem_sessao, sessao, monkeypatch):
+    _pre_aprovar(monkeypatch, EMAIL_VIP)
+    _ligar_aprovacao(sessao)
+
+    sem_sessao.post("/api/v1/clientes/identificar", json={"email": "outro@teste.local"})
+    novo = sessao.scalar(select(Cliente).where(Cliente.email == "outro@teste.local"))
+    assert novo.acesso_status == "pendente"
+    resposta = sem_sessao.get("/api/v1/home")
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "ACESSO_PENDENTE"
+
+
+@pytest.mark.parametrize("situacao", ["pendente", "recusado"])
+def teste_pre_aprovado_ja_existente_vira_aprovado_ao_identificar(sem_sessao, sessao, monkeypatch, situacao):
+    existente = _novo_cliente(sessao, EMAIL_VIP, situacao)
+    if situacao == "pendente":
+        sessao.add(AcessoSolicitacao(cliente_id=existente.id, email=existente.email))
+        sessao.commit()
+    _pre_aprovar(monkeypatch, EMAIL_VIP)
+    _ligar_aprovacao(sessao)
+
+    assert sem_sessao.post("/api/v1/clientes/identificar", json={"email": EMAIL_VIP}).status_code == 200
+    sessao.refresh(existente)
+    assert existente.acesso_status == "aprovado"
+    assert _pendentes(sessao, existente.id) == 0
+    assert sem_sessao.get("/api/v1/home").status_code == 200
+    if situacao == "pendente":
+        pedido = sessao.scalar(select(AcessoSolicitacao).where(AcessoSolicitacao.cliente_id == existente.id))
+        assert pedido.situacao == "aprovado"
+        assert pedido.decidido_por_admin_id is None
+        assert pedido.decidido_em is not None
+
+
+def teste_pre_aprovado_revogado_pelo_painel_continua_entrando(admin_logado, app_de_teste, sessao, monkeypatch):
+    vip = _novo_cliente(sessao, EMAIL_VIP, "aprovado")
+    _pre_aprovar(monkeypatch, EMAIL_VIP)
+    _ligar_aprovacao(sessao)
+    http = _logar(app_de_teste, sessao, vip)
+
+    resposta = admin_logado.patch(f"/api/v1/admin/acesso/{vip.id}", json={"situacao": "recusado"})
+    assert resposta.status_code == 200
+    sessao.refresh(vip)
+    assert vip.acesso_status == "recusado"
+
+    assert http.get("/api/v1/home").status_code == 200
+    assert http.get("/api/v1/acesso/estado").json()["podeNavegar"] is True
+    solicitar = http.post("/api/v1/acesso/solicitar", json={})
+    assert solicitar.status_code == 200
+    assert solicitar.json()["podeNavegar"] is True
+    assert _pendentes(sessao, vip.id) == 0
+
+
+def teste_lista_vazia_nao_muda_nada_para_ninguem(sem_sessao, sessao, monkeypatch):
+    _pre_aprovar(monkeypatch)
+    _ligar_aprovacao(sessao)
+
+    sem_sessao.post("/api/v1/clientes/identificar", json={"email": EMAIL_VIP})
+    novo = sessao.scalar(select(Cliente).where(Cliente.email == EMAIL_VIP))
+    assert novo.acesso_status == "pendente"
+    assert sem_sessao.get("/api/v1/home").status_code == 403

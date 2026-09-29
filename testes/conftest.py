@@ -80,6 +80,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import event  # noqa: E402
 
 from vip_api.banco import engine, obter_sessao  # noqa: E402
+from vip_api.modelos.acesso import AcessoConfig  # noqa: E402
 from vip_api.modelos.admin import Administrador  # noqa: E402
 from vip_api.modelos.cliente import Cliente  # noqa: E402
 from vip_api.principal import app  # noqa: E402
@@ -142,6 +143,23 @@ def sessao():
     sessao_de_teste.close()
     transacao.rollback()
     conexao.close()
+
+
+@pytest.fixture(autouse=True)
+def loja_aberta_nos_testes(sessao) -> None:
+    """A migração 0014 fecha a loja, e o esquema de teste sobe até o head.
+
+    O modo 'aberto' existe SÓ nos testes: aqui a config é aberta dentro da
+    transação do teste (revertida no fim, o banco de verdade não é tocado), para
+    que os demais testes de catálogo não precisem se preocupar com o portão. Os
+    testes do portão chamam `_ligar_aprovacao` quando precisam dele.
+    """
+    config = sessao.get(AcessoConfig, 1)
+    if config is None:
+        config = AcessoConfig(id=1)
+        sessao.add(config)
+    config.modo = "aberto"
+    sessao.commit()
 
 
 @pytest.fixture

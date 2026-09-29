@@ -13,10 +13,10 @@ testes/teste_acesso_loja.py:
   própria conta e não mostram catálogo.
 - /health — o healthcheck do Docker não tem sessão de cliente.
 - TODO o /admin/* — a equipe não tem sessão de cliente; se o portão pegasse o
-  painel, o administrador não conseguiria nem desligar o portão.
+  painel, o administrador não conseguiria nem liberar a fila.
 
-Com o modo em 'aberto' (o padrão) isto custa uma leitura por chave primária de
-uma linha só e não barra nada.
+O portão custa uma leitura por chave primária de uma linha só (acesso_config)
+por requisição. A loja é sempre fechada; sem a linha, também conta como fechado.
 """
 
 from fastapi import Depends, Request
@@ -29,6 +29,7 @@ from vip_api.erros.excecoes import AppError
 from vip_api.servicos.acesso import (
     MENSAGEM_PADRAO_PENDENTE,
     MENSAGEM_PADRAO_RECUSADO,
+    cliente_liberado,
     exige_aprovacao,
     obter_config,
 )
@@ -56,7 +57,7 @@ def exigir_acesso_liberado(requisicao: Request, sessao: Session = Depends(obter_
         )
 
     cliente, _sessao_cliente = encontrado
-    if cliente.acesso_status == "aprovado":
+    if cliente_liberado(cliente):
         return
 
     recusado = cliente.acesso_status == "recusado"

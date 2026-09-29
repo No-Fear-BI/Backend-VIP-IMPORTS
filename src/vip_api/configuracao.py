@@ -32,6 +32,10 @@ class Configuracao(BaseSettings):
     # O link de /selecoes é montado com ele: o número não é escrito no
     # código nem no frontend, para trocar em um lugar só.
     WHATSAPP_LOJA: str = ""
+    # E-mails que entram na loja fechada sem depender de aprovação, e que o
+    # painel não consegue barrar (servicos/acesso.py: `cliente_liberado`).
+    # Lista separada por vírgula, normalizada em minúsculas. Vazia por padrão.
+    EMAILS_PRE_APROVADOS: Annotated[list[str], NoDecode] = []
 
     # Upload de imagem pelo painel (produtos e banners) — disco local, servido
     # pela própria API via StaticFiles (ver principal.py). Diretório relativo
@@ -52,6 +56,15 @@ class Configuracao(BaseSettings):
         # JSON de verdade.
         if isinstance(valor, str):
             return [origem.strip() for origem in valor.split(",") if origem.strip()]
+        return valor
+
+    @field_validator("EMAILS_PRE_APROVADOS", mode="before")
+    @classmethod
+    def _normalizar_emails_pre_aprovados(cls, valor: object) -> object:
+        if isinstance(valor, str):
+            valor = valor.split(",")
+        if isinstance(valor, (list, tuple)):
+            return [item.strip().lower() for item in valor if str(item).strip()]
         return valor
 
     @model_validator(mode="after")

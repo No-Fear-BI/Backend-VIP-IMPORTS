@@ -43,7 +43,7 @@ class AcessoConfig(Base):
     )
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default="1")
-    modo: Mapped[str] = mapped_column(ACESSO_MODO, server_default="aberto")
+    modo: Mapped[str] = mapped_column(ACESSO_MODO, server_default="aprovacao")
     senha_hash: Mapped[str | None] = mapped_column(Text)
     mensagem_bloqueio: Mapped[str | None] = mapped_column(Text)
     atualizado_por_admin_id: Mapped[int | None] = mapped_column(Integer)
