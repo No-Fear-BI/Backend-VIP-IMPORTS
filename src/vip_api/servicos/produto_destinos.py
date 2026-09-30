@@ -24,10 +24,13 @@ def pertence_colecao(colecao_id):
     return or_(Produto.colecao_id == colecao_id, adicional)
 
 
-def validar_destinos(sessao, ids):
+def validar_destinos(sessao, ids, mantidos=()):
+    """`mantidos`: categorias que o produto já tem. Inativa só é barrada quando
+    está sendo ADICIONADA; quem já estava nela pode ser editado sem mexer nisso."""
     categorias = [sessao.get(Categoria, id) for id in ids] if ids else []
     if not 1 <= len(categorias) <= 2 or any(
-        not c or not c.ativa or not sessao.get(Colecao, c.colecao_id).ativa
+        not c or not sessao.get(Colecao, c.colecao_id).ativa
+        or (not c.ativa and c.id not in mantidos)
         for c in categorias
     ):
         raise AppError('DADOS_INVALIDOS', 'Confira as categorias selecionadas.', 400,

@@ -148,6 +148,10 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
             select(Categoria.id).where(
                 Categoria.slug == filtros.categoria,
                 Categoria.colecao_id == resolvidos["colecao_id"],
+                # Categoria escondida responde como slug desconhecido: o link direto
+                # não ressuscita a categoria tirada da vitrine. Os produtos dela
+                # continuam em /todos, novidades, busca, marcas e nas outras categorias.
+                Categoria.ativa.is_(True),
             )
         )
         if categoria_id is None:

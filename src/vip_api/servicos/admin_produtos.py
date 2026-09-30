@@ -416,7 +416,7 @@ def _conferir_marca(sessao: Session, marca_id: int) -> None:
         raise _campo_invalido("marcaId", "Marca não encontrada.")
 
 
-def _colecao_da_categoria(sessao: Session, categoria_id: int) -> int:
+def _colecao_da_categoria(sessao: Session, categoria_id: int, atual_id: int | None = None) -> int:
     """Devolve a coleção da categoria — e é essa coleção que o produto passa a
     carregar.
 
@@ -426,12 +426,13 @@ def _colecao_da_categoria(sessao: Session, categoria_id: int) -> int:
     coleções tornaria impossível mover uma bolsa do Feminino para o Masculino
     pelo painel, que é correção corriqueira de cadastro errado.
     """
-    colecao_id = sessao.scalar(
-        select(Categoria.colecao_id).where(Categoria.id == categoria_id)
-    )
-    if colecao_id is None:
+    categoria = sessao.get(Categoria, categoria_id)
+    if categoria is None:
         raise _campo_invalido("categoriaId", "Categoria não encontrada.")
-    return colecao_id
+    # Categoria escondida não recebe produto novo; quem já está nela pode ficar.
+    if not categoria.ativa and categoria_id != atual_id:
+        raise _campo_invalido("categoriaId", "Escolha uma categoria ativa.")
+    return categoria.colecao_id
 
 
 def _proxima_ordem_de_destaque(sessao: Session) -> int:
@@ -503,7 +504,8 @@ def editar_produto(
     if "categorias_ids" in informados:
         if "categoria_id" in informados:
             raise _campo_invalido("categoriasIds", "Envie categoriasIds ou categoriaId, nunca os dois.")
-        definir_destinos(sessao, produto, validar_destinos(sessao, dados.categorias_ids))
+        atuais = {produto.categoria_id} | set(sessao.scalars(select(ProdutoCategoriaAdicional.categoria_id).where(ProdutoCategoriaAdicional.produto_id == produto.id)))
+        definir_destinos(sessao, produto, validar_destinos(sessao, dados.categorias_ids, atuais))
 
     if "codigo" in informados and dados.codigo:
         novo = dados.codigo.strip().upper()
@@ -521,7 +523,7 @@ def editar_produto(
         _conferir_marca(sessao, dados.marca_id)
         produto.marca_id = dados.marca_id
     if "categoria_id" in informados and dados.categoria_id is not None and "categorias_ids" not in informados:
-        produto.colecao_id = _colecao_da_categoria(sessao, dados.categoria_id)
+        produto.colecao_id = _colecao_da_categoria(sessao, dados.categoria_id, produto.categoria_id)
         produto.categoria_id = dados.categoria_id
         sessao.execute(delete(ProdutoCategoriaAdicional).where(ProdutoCategoriaAdicional.produto_id == produto.id))
 

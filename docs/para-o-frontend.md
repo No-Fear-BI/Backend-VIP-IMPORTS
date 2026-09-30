@@ -259,3 +259,13 @@ Regra decidida com o cliente: todo produto fica **no máximo 14 dias** na págin
 - **Paginação:** `total` e `proximoCursor` valem dentro do recorte. O cursor guarda o filtro: um cursor de `?novidades=true` usado numa consulta sem ele (ou o contrário) devolve 400 `CURSOR_INVALIDO`. Ao trocar o filtro, recomece da primeira página.
 - **Produto novo:** para o produto criado no painel, o início da janela é a data de criação; para o que veio da revisão, é a data da aprovação (só ali ele entra na tabela `produtos`).
 - **`GET /home` não muda.** Os "destaques" da home são escolha manual da equipe (`destaque = true`, com ordem própria), não uma vitrine de novidades.
+
+## Categoria escondida (`ativa: false`) (30/09/2026)
+
+O painel passou a usar `ativa` em categorias (já existia no contrato). Regras, agora todas cobertas por `testes/teste_categoria_escondida.py`:
+
+- **Sai da vitrine:** `GET /colecoes/:slug/categorias` e os destaques de `GET /home` não devolvem a categoria. `PATCH /admin/destaques/categorias` continua recusando categoria inativa.
+- **Link direto (mudou):** `GET /produtos?colecao=&categoria=<slug escondido>` agora responde como slug desconhecido (lista vazia), em vez de listar os produtos dela. Os produtos seguem em `/produtos` sem filtro, por coleção, busca, marca, novidades e nas outras categorias deles.
+- **Produto que já está numa categoria escondida (mudou):** `PATCH /admin/produtos/:id` com `categoriasIds` só barra a categoria inativa quando ela é ADICIONADA; reenviar uma que o produto já tem passa (antes, adicionar o segundo destino a um produto cuja categoria principal estava escondida dava 400). `categoriaId` igual à atual também passa.
+- **Produto novo (mudou):** `categoriaId` de categoria escondida agora dá 400 (`campos.categoriaId`) em `PATCH /admin/produtos/lote`, em `POST /admin/produtos` e em `PATCH /admin/produtos/:id` (quando é outra que a atual).
+
