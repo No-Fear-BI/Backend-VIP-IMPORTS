@@ -15,8 +15,13 @@ on:
 
 # Um push novo na mesma branch cancela o anterior. Sem isto, três commits
 # seguidos ocupam três runners rodando a mesma coisa.
+#
+# `github.workflow` no grupo: chamado por publicar.yml (workflow_call), ele vale
+# "Publicar", não "Testes". Sem isso, o push na main disparava as duas cópias da
+# suíte no MESMO grupo, uma cancelava a outra em 1s e o commit ficava vermelho
+# com os testes passando.
 concurrency:
-  group: testes-${{ github.ref }}
+  group: testes-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
