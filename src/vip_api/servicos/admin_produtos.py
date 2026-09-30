@@ -38,14 +38,24 @@ from vip_api.esquemas.base import Pagina, Paginacao
 from vip_api.esquemas.produto import Capa, ImagemDetalhe, Referencia
 from vip_api.modelos.catalogo import (
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
     ProdutoVariacao,
 )
 from vip_api.modelos.produto_destinos import ProdutoCategoriaAdicional
-from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos
+from vip_api.servicos.colecoes import (
+    colecao_por_id,
+    flags_dos_publicos,
+    nome_da_colecao,
+    publicos,
+    slug_da_colecao,
+)
+from vip_api.servicos.produto_destinos import (
+    definir_destinos,
+    validar_destinos,
+    validar_publicos,
+)
 from vip_api.servicos.admin_variacoes import remover_variacoes
 from vip_api.texto import normalizar
 
@@ -87,9 +97,14 @@ def _aplicar_filtros(stmt, filtros: FiltrosAdmin):
     if filtros.categoria_id is not None:
         from vip_api.servicos.produto_destinos import pertence_categoria
         stmt = stmt.where(pertence_categoria(filtros.categoria_id))
-    elif filtros.colecao_id is not None:
+
+    if filtros.colecao_id is not None:
         from vip_api.servicos.produto_destinos import pertence_colecao
-        stmt = stmt.where(pertence_colecao(filtros.colecao_id))
+        colecao = colecao_por_id(filtros.colecao_id)
+        # Id que não é Feminino (1) nem Masculino (2) não casa nada.
+        stmt = stmt.where(
+            pertence_colecao(colecao["slug"]) if colecao else Produto.id.is_(None)
+        )
 
     if filtros.cor_id is not None:
         # EXISTS pelo mesmo motivo da vitrine: JOIN repetiria o produto que tem
@@ -139,11 +154,13 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 Produto.nome,
                 Produto.status,
                 Produto.destaque,
+                Produto.em_novidades,
                 Produto.criado_em,
                 Produto.atualizado_em,
                 Produto.marca_id,
                 Produto.categoria_id,
-                Produto.colecao_id,
+                Produto.feminino,
+                Produto.masculino,
             ),
             filtros,
         )
@@ -159,20 +176,20 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
             interna.c.nome,
             interna.c.status,
             interna.c.destaque,
+            interna.c.em_novidades,
             interna.c.criado_em,
             interna.c.atualizado_em,
             Marca.nome.label("marca_nome"),
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(interna.c.feminino, interna.c.masculino).label("colecao_nome"),
+            slug_da_colecao(interna.c.feminino).label("colecao_slug"),
             ProdutoImagem.url.label("capa_url"),
             ProdutoImagem.alt.label("capa_alt"),
         )
         .join(Marca, Marca.id == interna.c.marca_id)
         .join(Categoria, Categoria.id == interna.c.categoria_id)
-        .join(Colecao, Colecao.id == interna.c.colecao_id)
         .outerjoin(
             ProdutoImagem,
             and_(ProdutoImagem.produto_id == interna.c.id, ProdutoImagem.capa.is_(True)),
@@ -188,6 +205,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 nome=linha.nome,
                 status=linha.status,
                 destaque=linha.destaque,
+                em_novidades=linha.em_novidades,
                 marca=Referencia(nome=linha.marca_nome, slug=linha.marca_slug),
                 categoria=Referencia(nome=linha.categoria_nome, slug=linha.categoria_slug),
                 colecao=Referencia(nome=linha.colecao_nome, slug=linha.colecao_slug),
@@ -225,12 +243,11 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(Produto.feminino, Produto.masculino).label("colecao_nome"),
+            slug_da_colecao(Produto.feminino).label("colecao_slug"),
         )
         .join(Marca, Marca.id == Produto.marca_id)
         .join(Categoria, Categoria.id == Produto.categoria_id)
-        .join(Colecao, Colecao.id == Produto.colecao_id)
         .where(Produto.id == produto_id)
     ).first()
 
@@ -263,10 +280,11 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         descricao=produto.descricao,
         status=produto.status,
         destaque=produto.destaque,
+        em_novidades=produto.em_novidades,
         destaque_ordem=produto.destaque_ordem,
         marca_id=produto.marca_id,
         categoria_id=produto.categoria_id,
-        colecao_id=produto.colecao_id,
+        publicos=publicos(produto.feminino, produto.masculino),
         marca=Referencia(nome=cabecalho.marca_nome, slug=cabecalho.marca_slug),
         categoria=Referencia(nome=cabecalho.categoria_nome, slug=cabecalho.categoria_slug),
         colecao=Referencia(nome=cabecalho.colecao_nome, slug=cabecalho.colecao_slug),
@@ -416,23 +434,18 @@ def _conferir_marca(sessao: Session, marca_id: int) -> None:
         raise _campo_invalido("marcaId", "Marca não encontrada.")
 
 
-def _colecao_da_categoria(sessao: Session, categoria_id: int, atual_id: int | None = None) -> int:
-    """Devolve a coleção da categoria — e é essa coleção que o produto passa a
-    carregar.
-
-    DECISÃO: trocar a categoria TROCA a coleção junto, inclusive em lote.
-    Trocar uma sem a outra estoura a FK composta
-    (fk_produtos_categoria_colecao_categorias) com 500; e recusar a troca entre
-    coleções tornaria impossível mover uma bolsa do Feminino para o Masculino
-    pelo painel, que é correção corriqueira de cadastro errado.
-    """
+def _conferir_categoria(
+    sessao: Session, categoria_id: int, atual_id: int | None = None
+) -> Categoria:
+    """A categoria existe e está ativa. Desde a 0015 ela não carrega coleção: trocar a
+    categoria não mexe no público do produto (`feminino`/`masculino`)."""
     categoria = sessao.get(Categoria, categoria_id)
     if categoria is None:
         raise _campo_invalido("categoriaId", "Categoria não encontrada.")
     # Categoria escondida não recebe produto novo; quem já está nela pode ficar.
     if not categoria.ativa and categoria_id != atual_id:
         raise _campo_invalido("categoriaId", "Escolha uma categoria ativa.")
-    return categoria.colecao_id
+    return categoria
 
 
 def _proxima_ordem_de_destaque(sessao: Session) -> int:
@@ -458,17 +471,20 @@ def _codigo_ja_existe(sessao: Session, codigo: str, ignorar_id: int | None = Non
 
 def criar_produto(sessao: Session, dados: ProdutoCriar) -> ProdutoAdminDetalhe:
     _conferir_marca(sessao, dados.marca_id)
-    colecao_id = _colecao_da_categoria(sessao, dados.categoria_id)
+    _conferir_categoria(sessao, dados.categoria_id)
+    feminino, masculino = validar_publicos(dados.publicos)
 
     produto = Produto(
         nome=dados.nome.strip(),
         descricao=dados.descricao,
         status=dados.status,
         destaque=dados.destaque,
+        em_novidades=dados.em_novidades,
         destaque_ordem=dados.destaque_ordem,
         marca_id=dados.marca_id,
         categoria_id=dados.categoria_id,
-        colecao_id=colecao_id,
+        feminino=feminino,
+        masculino=masculino,
     )
     _ajustar_destaque(sessao, produto)
 
@@ -507,6 +523,9 @@ def editar_produto(
         atuais = {produto.categoria_id} | set(sessao.scalars(select(ProdutoCategoriaAdicional.categoria_id).where(ProdutoCategoriaAdicional.produto_id == produto.id)))
         definir_destinos(sessao, produto, validar_destinos(sessao, dados.categorias_ids, atuais))
 
+    if "publicos" in informados:
+        produto.feminino, produto.masculino = validar_publicos(dados.publicos)
+
     if "codigo" in informados and dados.codigo:
         novo = dados.codigo.strip().upper()
         if _codigo_ja_existe(sessao, novo, ignorar_id=produto.id):
@@ -523,7 +542,7 @@ def editar_produto(
         _conferir_marca(sessao, dados.marca_id)
         produto.marca_id = dados.marca_id
     if "categoria_id" in informados and dados.categoria_id is not None and "categorias_ids" not in informados:
-        produto.colecao_id = _colecao_da_categoria(sessao, dados.categoria_id, produto.categoria_id)
+        _conferir_categoria(sessao, dados.categoria_id, produto.categoria_id)
         produto.categoria_id = dados.categoria_id
         sessao.execute(delete(ProdutoCategoriaAdicional).where(ProdutoCategoriaAdicional.produto_id == produto.id))
 
@@ -532,6 +551,8 @@ def editar_produto(
     if "destaque_ordem" in informados:
         produto.destaque_ordem = dados.destaque_ordem
     _ajustar_destaque(sessao, produto)
+    if "em_novidades" in informados and dados.em_novidades is not None:
+        produto.em_novidades = dados.em_novidades
 
     produto.atualizado_em = datetime.now(timezone.utc)
     try:
@@ -590,7 +611,8 @@ def duplicar_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         destaque_ordem=None,
         marca_id=original.marca_id,
         categoria_id=original.categoria_id,
-        colecao_id=original.colecao_id,
+        feminino=original.feminino,
+        masculino=original.masculino,
     )
     _gravar_com_codigo_gerado(sessao, copia, _prefixo_da_marca(sessao, original.marca_id))
 
@@ -676,8 +698,7 @@ def alterar_em_lote(
         _conferir_marca(sessao, marca_id)
         valores["marca_id"] = marca_id
     if categoria_id is not None:
-        # A coleção vai junto — ver _colecao_da_categoria.
-        valores["colecao_id"] = _colecao_da_categoria(sessao, categoria_id)
+        _conferir_categoria(sessao, categoria_id)
         valores["categoria_id"] = categoria_id
         sessao.execute(delete(ProdutoCategoriaAdicional).where(ProdutoCategoriaAdicional.produto_id.in_(pedidos)))
     if destaque is not None:

@@ -40,7 +40,7 @@ def teste_criar_com_codigo_informado(admin_logado, marca_e_categoria):
             "codigo": "chn-9001",
             "nome": "Bolsa Clássica",
             "marcaId": marca.id,
-            "categoriaId": categoria.id,
+            "categoriaId": categoria.id, "publicos": ["feminino"],
         },
     )
 
@@ -49,7 +49,7 @@ def teste_criar_com_codigo_informado(admin_logado, marca_e_categoria):
     # Guardado em maiúsculas, como o resto do catálogo.
     assert corpo["codigo"] == "CHN-9001"
     assert corpo["status"] == "normal"
-    assert corpo["colecaoId"] == categoria.colecao_id
+    assert corpo["publicos"] == ["feminino"]
 
 
 def teste_criar_sem_codigo_gera_no_padrao_da_marca(admin_logado, marca_e_categoria):
@@ -57,7 +57,7 @@ def teste_criar_sem_codigo_gera_no_padrao_da_marca(admin_logado, marca_e_categor
     marca, categoria = marca_e_categoria
 
     resposta = admin_logado.post(
-        ROTA, json={"nome": "Bolsa Nova", "marcaId": marca.id, "categoriaId": categoria.id}
+        ROTA, json={"nome": "Bolsa Nova", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"]}
     )
 
     assert resposta.status_code == 201
@@ -74,7 +74,7 @@ def teste_codigo_gerado_continua_a_sequencia_da_marca(
     sessao.commit()
 
     resposta = admin_logado.post(
-        ROTA, json={"nome": "Bolsa Seguinte", "marcaId": marca.id, "categoriaId": categoria.id}
+        ROTA, json={"nome": "Bolsa Seguinte", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"]}
     )
 
     assert resposta.status_code == 201
@@ -92,7 +92,7 @@ def teste_criar_com_codigo_repetido_responde_409(admin_logado, sessao, marca_e_c
             "codigo": "CHN-0100",
             "nome": "Outra Bolsa",
             "marcaId": marca.id,
-            "categoriaId": categoria.id,
+            "categoriaId": categoria.id, "publicos": ["feminino"],
         },
     )
 
@@ -105,7 +105,7 @@ def teste_criar_com_marca_inexistente_responde_400(admin_logado, marca_e_categor
     _, categoria = marca_e_categoria
 
     resposta = admin_logado.post(
-        ROTA, json={"nome": "Sem Marca", "marcaId": 99_999, "categoriaId": categoria.id}
+        ROTA, json={"nome": "Sem Marca", "marcaId": 99_999, "categoriaId": categoria.id, "publicos": ["feminino"]}
     )
 
     assert resposta.status_code == 400
@@ -351,12 +351,11 @@ def teste_lote_com_campo_fora_da_lista_responde_400(admin_logado, catalogo):
     assert "nome" in resposta.json()["erro"]["campos"]
 
 
-def teste_lote_troca_categoria_e_leva_a_colecao_junto(admin_logado, sessao, catalogo):
-    """A FK composta exige que a coleção do produto seja a da categoria. A
-    rota move as duas juntas — recusar tornaria impossível corrigir um produto
-    cadastrado na coleção errada."""
-    do_feminino = [p for p in catalogo.visiveis if p.colecao_id == catalogo.categorias[0].colecao_id]
-    destino = catalogo.categorias[1]  # categoria da coleção masculina
+def teste_lote_troca_categoria_sem_mexer_no_publico(admin_logado, sessao, catalogo):
+    """Desde a 0015 a categoria não tem coleção: trocar a categoria em lote não muda o
+    público do produto (feminino/masculino)."""
+    do_feminino = [p for p in catalogo.visiveis if p.feminino]
+    destino = catalogo.categorias[1]  # Sapatos
     ids = [p.id for p in do_feminino[:3]]
 
     resposta = admin_logado.patch(f"{ROTA}/lote", json={"ids": ids, "categoriaId": destino.id})
@@ -366,7 +365,7 @@ def teste_lote_troca_categoria_e_leva_a_colecao_junto(admin_logado, sessao, cata
     for identificador in ids:
         produto = sessao.get(Produto, identificador)
         assert produto.categoria_id == destino.id
-        assert produto.colecao_id == destino.colecao_id
+        assert produto.feminino and not produto.masculino
 
 
 def teste_lote_acima_do_teto_responde_400(admin_logado):

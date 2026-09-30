@@ -34,8 +34,7 @@ from vip_api.banco import obter_sessao
 from vip_api.configuracao import configuracao
 from vip_api.erros.excecoes import AppError
 from vip_api.modelos.revisao import DecisaoRevisao
-from vip_api.modelos.catalogo import Colecao
-from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos
+from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos, validar_publicos
 from vip_api.texto import gerar_slug
 from vip_api.servicos.imagens_processamento import abrir_imagem
 from vip_api.servicos.importacao_catalogo import importar_produto
@@ -90,7 +89,11 @@ class Decisao(BaseModel):
     # NUNCA vem de `supplier`/`p['category']` sozinho, ver docstring do módulo.
     marca: str | None = None
     colecao: str | None = None
-    categoriasIds: list[int] | None = Field(None, min_length=1, max_length=2)
+    categoriasIds: list[int] | None = Field(None, min_length=1, max_length=5)
+    # Feminino, masculino ou os dois (unissex). Sem isto vale `colecao`.
+    publicos: list[str] | None = None
+    # Entra na página Novidades (por 14 dias) ao aprovar. Padrão: sim.
+    emNovidades: bool = True
 
 @roteador.get('/pendentes')
 def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por_pagina:int=Query(60,alias='porPagina',ge=1,le=100), sessao:Session=Depends(obter_sessao)):
@@ -120,9 +123,13 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
         if not marca:
             campos['marca'] = 'Escolha a marca do produto.'
         destinos = validar_destinos(sessao, corpo.categoriasIds) if corpo.categoriasIds is not None else None
-        if destinos:
-            colecao = sessao.get(Colecao, destinos[0].colecao_id).slug
-        if colecao not in {'feminino', 'masculino'}:
+        if corpo.publicos is not None:
+            flags = validar_publicos(corpo.publicos)
+            colecao = 'feminino' if flags[0] else 'masculino'
+        elif colecao in {'feminino', 'masculino'}:
+            flags = (colecao == 'feminino', colecao == 'masculino')
+        else:
+            flags = None
             campos['colecao'] = 'Escolha feminino ou masculino.'
         if campos:
             raise AppError('DADOS_INVALIDOS', 'Confira os campos destacados.', 400, campos=campos)
@@ -145,12 +152,14 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
                 url_base=configuracao.IMAGENS_URL_BASE,
                 cache_marcas={},
                 cache_colecoes={},
-                cache_categorias={(destinos[0].colecao_id, gerar_slug(destinos[0].nome)): destinos[0]} if destinos else {},
+                cache_categorias={gerar_slug(destinos[0].nome): destinos[0]} if destinos else {},
                 # `p['id']` é "<fornecedor>-<id do álbum>" — pasta_imagens
                 # usa só o número: a pasta pública nunca carrega o nome do
                 # fornecedor, mesmo indiretamente pela URL da foto.
                 pasta_imagens=p['id'].rsplit('-', 1)[-1],
             )
+            produto.feminino, produto.masculino = flags
+            produto.em_novidades = corpo.emNovidades
             if destinos:
                 definir_destinos(sessao, produto, destinos)
         except ValueError as exc:

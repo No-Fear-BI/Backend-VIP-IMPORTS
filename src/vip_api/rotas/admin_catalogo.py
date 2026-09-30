@@ -136,10 +136,9 @@ def cores_excluir(
 
 @roteador_categorias.get("", response_model=list[CategoriaAdmin])
 def categorias_listar(
-    colecao_id: int | None = Query(None, alias="colecaoId"),
     sessao: Session = Depends(obter_sessao),
 ) -> list[CategoriaAdmin]:
-    return listar_categorias(sessao, colecao_id)
+    return listar_categorias(sessao)
 
 
 @roteador_categorias.post("", response_model=CategoriaAdmin, status_code=201)

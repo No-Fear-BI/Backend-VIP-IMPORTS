@@ -31,6 +31,7 @@ class ProdutoAdminItem(EsquemaResposta):
     nome: str
     status: StatusProduto
     destaque: bool
+    em_novidades: bool
     marca: Referencia
     categoria: Referencia
     colecao: Referencia
@@ -66,10 +67,11 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     descricao: str | None = None
     status: StatusProduto
     destaque: bool
+    em_novidades: bool
     destaque_ordem: int | None = None
     marca_id: int
     categoria_id: int
-    colecao_id: int
+    publicos: list[Literal["feminino", "masculino"]]
     categorias_ids: list[int] = []
     marca: Referencia
     categoria: Referencia
@@ -88,9 +90,13 @@ class ProdutoCriar(EsquemaEntrada):
     descricao: str | None = None
     status: StatusProduto = "normal"
     destaque: bool = False
+    # Entra na página Novidades (por 14 dias). Padrão: sim.
+    em_novidades: bool = True
     destaque_ordem: int | None = None
     marca_id: int
     categoria_id: int
+    # Feminino, masculino ou os dois (unissex). Obrigatório: todo produto tem público.
+    publicos: list[Literal["feminino", "masculino"]] = Field(min_length=1, max_length=2)
 
 
 class ProdutoEditar(EsquemaEntrada):
@@ -104,10 +110,12 @@ class ProdutoEditar(EsquemaEntrada):
     descricao: str | None = None
     status: StatusProduto | None = None
     destaque: bool | None = None
+    em_novidades: bool | None = None
     destaque_ordem: int | None = None
     marca_id: int | None = None
     categoria_id: int | None = None
-    categorias_ids: list[int] | None = Field(None, min_length=1, max_length=2)
+    categorias_ids: list[int] | None = Field(None, min_length=1, max_length=5)
+    publicos: list[Literal["feminino", "masculino"]] | None = Field(None, min_length=1, max_length=2)
 
 
 class LoteEntrada(EsquemaEntrada):

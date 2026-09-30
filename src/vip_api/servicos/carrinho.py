@@ -26,13 +26,13 @@ from vip_api.esquemas.carrinho import CarrinhoItemSaida, ItemIgnorado
 from vip_api.esquemas.produto import Capa, Referencia, VariacaoDetalhe
 from vip_api.modelos.catalogo import (
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
     ProdutoVariacao,
 )
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem
+from vip_api.servicos.colecoes import nome_da_colecao, slug_da_colecao
 
 MOTIVO_PRODUTO_INDISPONIVEL = "PRODUTO_INDISPONIVEL"
 
@@ -92,8 +92,8 @@ def _consulta_de_itens(carrinho_id: int):
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(Produto.feminino, Produto.masculino).label("colecao_nome"),
+            slug_da_colecao(Produto.feminino).label("colecao_slug"),
             ProdutoImagem.url.label("capa_url"),
             ProdutoImagem.alt.label("capa_alt"),
             _Tamanho.id.label("tamanho_id"),
@@ -106,7 +106,6 @@ def _consulta_de_itens(carrinho_id: int):
         .join(Produto, Produto.id == CarrinhoItem.produto_id)
         .join(Marca, Marca.id == Produto.marca_id)
         .join(Categoria, Categoria.id == Produto.categoria_id)
-        .join(Colecao, Colecao.id == Produto.colecao_id)
         .outerjoin(
             ProdutoImagem,
             and_(ProdutoImagem.produto_id == Produto.id, ProdutoImagem.capa.is_(True)),

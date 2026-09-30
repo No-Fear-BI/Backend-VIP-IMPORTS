@@ -18,13 +18,13 @@ from sqlalchemy.orm import Session
 
 from vip_api.modelos.catalogo import (
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
     ProdutoVariacao,
 )
 from vip_api.servicos.admin_variacoes import obter_ou_criar_cor
+from vip_api.servicos.colecoes import nome_do_publico
 
 # Nomes escolhidos para embaralhar as duas ordenações: em ordem alfabética a
 # sequência não bate com a ordem de criação, então uma travessia por `nome`
@@ -64,14 +64,15 @@ def criar_marca(sessao: Session, nome: str, slug: str, ordem: int = 0) -> Marca:
 
 
 def criar_categoria(sessao: Session, colecao_slug: str, nome: str, slug: str) -> Categoria:
-    colecao = sessao.scalar(select(Colecao).where(Colecao.slug == colecao_slug))
-    categoria = sessao.scalar(
-        select(Categoria).where(Categoria.colecao_id == colecao.id, Categoria.slug == slug)
-    )
+    """Categoria por slug (único na tabela desde a 0015). `colecao_slug` não vai para o
+    banco: fica só no objeto como o público PADRÃO dos produtos criados com ela, para os
+    testes que ainda contam "a categoria do Feminino"."""
+    categoria = sessao.scalar(select(Categoria).where(Categoria.slug == slug))
     if categoria is None:
-        categoria = Categoria(colecao_id=colecao.id, nome=nome, slug=slug)
+        categoria = Categoria(nome=nome, slug=slug)
         sessao.add(categoria)
         sessao.flush()
+    categoria._publico_padrao = colecao_slug
     return categoria
 
 
@@ -84,16 +85,17 @@ def criar_produto(
     status: str = "normal",
     com_imagem: bool = True,
     variacoes: list[tuple[str, str]] | None = None,
+    publicos: list[str] | None = None,
 ) -> Produto:
+    publicos = publicos or [getattr(categoria, "_publico_padrao", "feminino")]
     produto = Produto(
         codigo=codigo,
         nome=nome,
         status=status,
         marca_id=marca.id,
         categoria_id=categoria.id,
-        # Duplicado do da categoria de propósito (FK composta garante que não
-        # dessincroniza) — é o que faz o filtro ?colecao= dispensar JOIN.
-        colecao_id=categoria.colecao_id,
+        feminino="feminino" in publicos,
+        masculino="masculino" in publicos,
     )
     sessao.add(produto)
     sessao.flush()
@@ -187,7 +189,6 @@ def criar_selecao(
     for ordem, produto in enumerate(produtos, start=1):
         categoria = sessao.get(Categoria, produto.categoria_id)
         marca = sessao.get(Marca, produto.marca_id)
-        colecao = sessao.get(Colecao, produto.colecao_id)
         sessao.add(
             SelecaoItem(
                 selecao_id=selecao.id,
@@ -196,7 +197,7 @@ def criar_selecao(
                 produto_nome=produto.nome,
                 marca_nome=marca.nome,
                 categoria_nome=categoria.nome,
-                colecao_nome=colecao.nome,
+                colecao_nome=nome_do_publico(produto.feminino, produto.masculino),
                 imagem_url=f"https://exemplo.test/{produto.codigo}.jpg",
                 variacao_tamanho=variacao[0],
                 variacao_cor=variacao[1],

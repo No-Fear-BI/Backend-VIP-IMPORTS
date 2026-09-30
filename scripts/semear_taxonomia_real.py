@@ -54,7 +54,8 @@ from sqlalchemy.orm import Session  # noqa: E402
 from vip_api.banco import SessaoLocal  # noqa: E402
 from vip_api.configuracao import configuracao  # noqa: E402
 from vip_api.esquemas.admin_catalogo import CategoriaCriar, MarcaCriar  # noqa: E402
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca  # noqa: E402
+from vip_api.modelos.catalogo import Categoria, Marca  # noqa: E402
+from vip_api.servicos.colecoes import SLUGS as PUBLICOS  # noqa: E402
 from vip_api.servicos.admin_categorias import criar_categoria  # noqa: E402
 from vip_api.servicos.admin_marcas import criar_marca  # noqa: E402
 from vip_api.texto import gerar_slug  # noqa: E402
@@ -139,51 +140,28 @@ def _semear_marcas(
 def _semear_categorias(
     sessao: Session, pares: list[tuple[str, str]], simular: bool
 ) -> tuple[list[str], list[str]]:
-    colecoes = {c.slug: c for c in sessao.scalars(select(Colecao))}
-    existentes: dict[tuple[int, str], str] = {}
-    for cat in sessao.scalars(select(Categoria)):
-        existentes[(cat.colecao_id, cat.slug)] = cat.nome
-    proxima_ordem = {
-        colecao_id: (
-            sessao.scalar(
-                select(Categoria.ordem)
-                .where(Categoria.colecao_id == colecao_id)
-                .order_by(Categoria.ordem.desc())
-            )
-            or 0
-        )
-        + 1
-        for colecao_id in (c.id for c in colecoes.values())
-    }
+    """Desde a 0015 a categoria não tem coleção: o slug é único, então "Bolsas" do Feminino e
+    "Bolsas" do Masculino do CSV viram UMA categoria. O segundo campo do CSV só é validado."""
+    existentes: dict[str, str] = {cat.slug: cat.nome for cat in sessao.scalars(select(Categoria))}
+    proxima_ordem = (sessao.scalar(select(Categoria.ordem).order_by(Categoria.ordem.desc())) or 0) + 1
 
     criadas, ja_existiam = [], []
     for nome, colecao_slug in pares:
-        colecao = colecoes.get(colecao_slug)
-        if colecao is None:
+        if colecao_slug not in PUBLICOS:
             sys.exit(
-                f"Coleção {colecao_slug!r} não existe no banco (só feminino/"
-                "masculino são semeadas pela migração 0001). Verifique o CSV."
+                f"Público {colecao_slug!r} inválido (só feminino/masculino). Verifique o CSV."
             )
         slug = gerar_slug(nome)
-        chave = (colecao.id, slug)
-        if chave in existentes:
-            ja_existiam.append(
-                f"{nome!r}/{colecao_slug} -> já é {existentes[chave]!r} (slug {slug!r})"
-            )
+        if slug in existentes:
+            ja_existiam.append(f"{nome!r} -> já é {existentes[slug]!r} (slug {slug!r})")
             continue
-        ordem = proxima_ordem[colecao.id]
         if simular:
-            criadas.append(f"{nome!r}/{colecao_slug} (slug {slug!r}, ordem {ordem})")
+            criadas.append(f"{nome!r} (slug {slug!r}, ordem {proxima_ordem})")
         else:
-            criar_categoria(
-                sessao,
-                CategoriaCriar(
-                    colecao_id=colecao.id, nome=nome, ordem=ordem
-                ),
-            )
-            criadas.append(f"{nome!r}/{colecao_slug} (slug {slug!r})")
-        existentes[chave] = nome
-        proxima_ordem[colecao.id] = ordem + 1
+            criar_categoria(sessao, CategoriaCriar(nome=nome, ordem=proxima_ordem))
+            criadas.append(f"{nome!r} (slug {slug!r})")
+        existentes[slug] = nome
+        proxima_ordem += 1
     return criadas, ja_existiam
 
 

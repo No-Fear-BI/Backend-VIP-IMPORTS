@@ -1,26 +1,12 @@
-"""CRUD de categorias no painel (tarefa 57).
+"""CRUD de categorias no painel (tarefa 57; revisto na migração 0015).
 
-O slug da categoria é único POR COLEÇÃO, não global: "bolsas" existe em
-Feminino e em Masculino, e são categorias diferentes. É o que a restrição
-uq_categorias_colecao_slug diz desde a 0001, e é por isso que a URL pública
-precisa das duas coisas (`?colecao=feminino&categoria=bolsas`).
+Desde a 0015 a categoria NÃO pertence a coleção: o slug é único na tabela toda, e Feminino e
+Masculino são o público do produto (`produtos.feminino`/`masculino`), não categoria. "Bolsas"
+existe uma vez só; o mesmo vale para um tema como "Coleção de verão".
 
-TROCAR A COLEÇÃO DE UMA CATEGORIA COM PRODUTOS: recusado com 409.
-
-A FK composta fk_produtos_categoria_colecao_categorias amarra
-produtos (categoria_id, colecao_id) a categorias (id, colecao_id). Ela NÃO é
-adiável, então não existe ordem de instruções que mova as duas pontas juntas
-dentro da mesma transação: mexer na categoria primeiro quebra os produtos que
-ainda apontam para a coleção antiga, e mexer nos produtos primeiro os deixa
-apontando para um par que ainda não existe. Mover a categoria junto com os
-produtos exigiria tornar a FK adiável — mudança de schema para um caso que,
-além disso, é decisão de negócio: passar 600 produtos de Feminino para
-Masculino não é efeito colateral de corrigir um cadastro.
-
-O caminho que existe para isso é o outro: criar a categoria na coleção certa e
-mover os produtos com `PATCH /admin/produtos/lote`, que move a coleção junto —
-é o que a mensagem do 409 manda fazer. Categoria SEM produto troca de coleção
-normalmente.
+Excluir categoria com produto continua sendo 409: o caminho é mover os produtos
+(`PATCH /admin/produtos/lote` com `categoriaId`) ou esconder a categoria (`ativa: false`), que
+a tira da vitrine sem apagar nada.
 """
 
 from datetime import datetime, timezone
@@ -31,7 +17,6 @@ from sqlalchemy.orm import Session
 from vip_api.erros.codigos import (
     CATEGORIA_COM_PRODUTOS,
     CATEGORIA_NAO_ENCONTRADA,
-    COLECAO_NAO_ENCONTRADA,
     SLUG_EM_USO,
 )
 from vip_api.erros.excecoes import AppError
@@ -40,7 +25,7 @@ from vip_api.esquemas.admin_catalogo import (
     CategoriaCriar,
     CategoriaEditar,
 )
-from vip_api.modelos.catalogo import Categoria, Colecao, Produto
+from vip_api.modelos.catalogo import Categoria, Produto
 from vip_api.servicos.produto_destinos import pertence_categoria
 from vip_api.texto import gerar_slug
 
@@ -55,12 +40,12 @@ def _nao_encontrada() -> AppError:
     )
 
 
-def _slug_em_uso(slug: str, colecao_slug: str) -> AppError:
+def _slug_em_uso(slug: str) -> AppError:
     return AppError(
         codigo=SLUG_EM_USO,
-        mensagem=f"Já existe uma categoria '{slug}' na coleção {colecao_slug}.",
+        mensagem=f"Já existe uma categoria '{slug}'.",
         status_code=409,
-        campos={"slug": "Este slug já existe nesta coleção."},
+        campos={"slug": "Este slug já existe."},
     )
 
 
@@ -71,38 +56,22 @@ def _carregar(sessao: Session, categoria_id: int) -> Categoria:
     return categoria
 
 
-def _colecao(sessao: Session, colecao_id: int) -> Colecao:
-    colecao = sessao.get(Colecao, colecao_id)
-    if colecao is None:
-        raise AppError(
-            codigo=COLECAO_NAO_ENCONTRADA,
-            mensagem="Coleção não encontrada.",
-            status_code=400,
-            campos={"colecaoId": "Coleção não encontrada."},
-        )
-    return colecao
-
-
-def _slug_livre(
-    sessao: Session, colecao_id: int, slug: str, ignorar_id: int | None = None
-) -> bool:
-    consulta = select(Categoria.id).where(
-        Categoria.colecao_id == colecao_id, Categoria.slug == slug
-    )
+def _slug_livre(sessao: Session, slug: str, ignorar_id: int | None = None) -> bool:
+    consulta = select(Categoria.id).where(Categoria.slug == slug)
     if ignorar_id is not None:
         consulta = consulta.where(Categoria.id != ignorar_id)
     return sessao.scalar(consulta) is None
 
 
-def _slug_gerado(sessao: Session, colecao_id: int, nome: str) -> str:
+def _slug_gerado(sessao: Session, nome: str) -> str:
     base = gerar_slug(nome) or "categoria"
-    if _slug_livre(sessao, colecao_id, base):
+    if _slug_livre(sessao, base):
         return base
     for sufixo in range(2, TENTATIVAS_DE_SLUG + 2):
         candidato = f"{base}-{sufixo}"
-        if _slug_livre(sessao, colecao_id, candidato):
+        if _slug_livre(sessao, candidato):
             return candidato
-    raise _slug_em_uso(base, str(colecao_id))
+    raise _slug_em_uso(base)
 
 
 def _total_por_categoria(sessao: Session, ids: list[int]) -> dict[int, int]:
@@ -117,11 +86,9 @@ def _total_por_categoria(sessao: Session, ids: list[int]) -> dict[int, int]:
     return {categoria_id: total for categoria_id, total in linhas}
 
 
-def _montar(categoria: Categoria, colecao_slug: str, total: int) -> CategoriaAdmin:
+def _montar(categoria: Categoria, total: int) -> CategoriaAdmin:
     return CategoriaAdmin(
         id=categoria.id,
-        colecao_id=categoria.colecao_id,
-        colecao_slug=colecao_slug,
         nome=categoria.nome,
         slug=categoria.slug,
         imagem_url=categoria.imagem_url,
@@ -129,6 +96,8 @@ def _montar(categoria: Categoria, colecao_slug: str, total: int) -> CategoriaAdm
         destaque_ordem=categoria.destaque_ordem,
         ordem=categoria.ordem,
         ativa=categoria.ativa,
+        card_home=categoria.card_home,
+        card_home_imagem_url=categoria.card_home_imagem_url,
         total_produtos=total,
         criado_em=categoria.criado_em,
         atualizado_em=categoria.atualizado_em,
@@ -136,44 +105,39 @@ def _montar(categoria: Categoria, colecao_slug: str, total: int) -> CategoriaAdm
 
 
 def _um(sessao: Session, categoria: Categoria) -> CategoriaAdmin:
-    colecao_slug = sessao.scalar(
-        select(Colecao.slug).where(Colecao.id == categoria.colecao_id)
-    )
     totais = _total_por_categoria(sessao, [categoria.id])
-    return _montar(categoria, colecao_slug, totais.get(categoria.id, 0))
+    return _montar(categoria, totais.get(categoria.id, 0))
 
 
-def listar_categorias(
-    sessao: Session, colecao_id: int | None = None
-) -> list[CategoriaAdmin]:
-    consulta = (
-        select(Categoria, Colecao.slug.label("colecao_slug"))
-        .join(Colecao, Colecao.id == Categoria.colecao_id)
-        .order_by(Colecao.ordem.asc(), Categoria.ordem.asc(), Categoria.nome.asc())
-    )
-    if colecao_id is not None:
-        consulta = consulta.where(Categoria.colecao_id == colecao_id)
+def listar_categorias(sessao: Session) -> list[CategoriaAdmin]:
+    categorias = sessao.scalars(
+        select(Categoria).order_by(Categoria.ordem.asc(), Categoria.nome.asc())
+    ).all()
+    totais = _total_por_categoria(sessao, [c.id for c in categorias])
+    return [_montar(c, totais.get(c.id, 0)) for c in categorias]
 
-    linhas = sessao.execute(consulta).all()
-    totais = _total_por_categoria(sessao, [linha[0].id for linha in linhas])
-    return [
-        _montar(linha[0], linha.colecao_slug, totais.get(linha[0].id, 0))
-        for linha in linhas
-    ]
+
+def _liberar_card(sessao: Session, lado: str, ignorar_id: int | None = None) -> None:
+    """Cada card da home tem UMA categoria: quem já o ocupava sai dele (e perde a imagem do card).
+    O flush vem antes de quem entra gravar, por causa do índice único parcial."""
+    consulta = select(Categoria).where(Categoria.card_home == lado)
+    if ignorar_id is not None:
+        consulta = consulta.where(Categoria.id != ignorar_id)
+    for anterior in sessao.scalars(consulta):
+        anterior.card_home = None
+        anterior.card_home_imagem_url = None
+    sessao.flush()
 
 
 def criar_categoria(sessao: Session, dados: CategoriaCriar) -> CategoriaAdmin:
-    colecao = _colecao(sessao, dados.colecao_id)
-
     if dados.slug:
         slug = gerar_slug(dados.slug)
-        if not _slug_livre(sessao, colecao.id, slug):
-            raise _slug_em_uso(slug, colecao.slug)
+        if not _slug_livre(sessao, slug):
+            raise _slug_em_uso(slug)
     else:
-        slug = _slug_gerado(sessao, colecao.id, dados.nome)
+        slug = _slug_gerado(sessao, dados.nome)
 
     categoria = Categoria(
-        colecao_id=colecao.id,
         nome=dados.nome.strip(),
         slug=slug,
         imagem_url=dados.imagem_url,
@@ -182,6 +146,10 @@ def criar_categoria(sessao: Session, dados: CategoriaCriar) -> CategoriaAdmin:
         ordem=dados.ordem,
         ativa=dados.ativa,
     )
+    if dados.card_home:
+        _liberar_card(sessao, dados.card_home)
+        categoria.card_home = dados.card_home
+        categoria.card_home_imagem_url = dados.card_home_imagem_url
     _ajustar_destaque(sessao, categoria)
     sessao.add(categoria)
     sessao.commit()
@@ -206,43 +174,13 @@ def editar_categoria(
 ) -> CategoriaAdmin:
     categoria = _carregar(sessao, categoria_id)
     informados = dados.model_fields_set
-    colecao_id = categoria.colecao_id
-
-    if "colecao_id" in informados and dados.colecao_id is not None:
-        colecao_id = _colecao(sessao, dados.colecao_id).id
-
-    if colecao_id != categoria.colecao_id:
-        total = sessao.scalar(
-            select(func.count())
-            .select_from(Produto)
-            .where(pertence_categoria(categoria.id))
-        )
-        if total:
-            raise AppError(
-                codigo=CATEGORIA_COM_PRODUTOS,
-                mensagem=(
-                    f"Não é possível mudar a coleção: {total} produtos usam esta "
-                    "categoria. Crie a categoria na outra coleção e mova os "
-                    "produtos por PATCH /admin/produtos/lote."
-                ),
-                status_code=409,
-                campos={"colecaoId": "Mova os produtos antes."},
-                detalhes={"totalProdutos": total},
-            )
 
     # Slug: mesma regra da marca — trocar o nome não mexe na URL.
     if "slug" in informados and dados.slug:
         novo = gerar_slug(dados.slug)
-        if not _slug_livre(sessao, colecao_id, novo, ignorar_id=categoria.id):
-            raise _slug_em_uso(novo, _colecao(sessao, colecao_id).slug)
+        if not _slug_livre(sessao, novo, ignorar_id=categoria.id):
+            raise _slug_em_uso(novo)
         categoria.slug = novo
-    elif colecao_id != categoria.colecao_id:
-        # Mudou de coleção com o mesmo slug: o par (coleção, slug) pode já
-        # existir do outro lado.
-        if not _slug_livre(sessao, colecao_id, categoria.slug, ignorar_id=categoria.id):
-            raise _slug_em_uso(categoria.slug, _colecao(sessao, colecao_id).slug)
-
-    categoria.colecao_id = colecao_id
 
     if "nome" in informados and dados.nome:
         categoria.nome = dados.nome.strip()
@@ -257,6 +195,16 @@ def editar_categoria(
     if "destaque_ordem" in informados:
         categoria.destaque_ordem = dados.destaque_ordem
     _ajustar_destaque(sessao, categoria)
+
+    if "card_home" in informados:
+        if dados.card_home:
+            _liberar_card(sessao, dados.card_home, ignorar_id=categoria.id)
+            categoria.card_home = dados.card_home
+        else:
+            categoria.card_home = None
+            categoria.card_home_imagem_url = None
+    if "card_home_imagem_url" in informados and (categoria.card_home or "card_home" not in informados):
+        categoria.card_home_imagem_url = dados.card_home_imagem_url if categoria.card_home else None
 
     categoria.atualizado_em = datetime.now(timezone.utc)
     sessao.commit()

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from vip_api.erros.codigos import (
     CURSOR_INVALIDO,
-    PARAMETRO_OBRIGATORIO,
     PRODUTO_NAO_ENCONTRADO,
 )
 from vip_api.erros.excecoes import AppError
@@ -29,7 +28,6 @@ from vip_api.esquemas.produto import (
 )
 from vip_api.modelos.catalogo import (
     Categoria,
-    Colecao,
     Cor,
     Marca,
     Produto,
@@ -37,6 +35,7 @@ from vip_api.modelos.catalogo import (
     ProdutoVariacao,
 )
 from vip_api.texto import normalizar
+from vip_api.servicos.colecoes import colecao_por_slug, nome_da_colecao, slug_da_colecao
 from vip_api.servicos.produto_destinos import pertence_categoria, pertence_colecao
 
 POR_PAGINA_PADRAO = 24
@@ -70,18 +69,6 @@ class FiltrosProduto:
     ordem: str = ORDEM_RECENTES
     cursor: str | None = None
     por_pagina: int = POR_PAGINA_PADRAO
-
-
-def _validar_parametros(filtros: FiltrosProduto) -> None:
-    # Slug de categoria é único POR COLEÇÃO: "bolsas" existe em Feminino e em
-    # Masculino. Sem a coleção junto, não dá para saber de qual se trata.
-    if filtros.categoria and not filtros.colecao:
-        raise AppError(
-            codigo=PARAMETRO_OBRIGATORIO,
-            mensagem="Informe a coleção junto com a categoria.",
-            status_code=400,
-            campos={"colecao": "Obrigatório quando categoria é informada."},
-        )
 
 
 def _ler_cursor(filtros: FiltrosProduto) -> dict | None:
@@ -129,7 +116,7 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
     """Traduz slugs em ids. Devolve None quando algum slug não existe — o que
     significa filtro que não casa nada, não erro."""
     resolvidos: dict = {
-        "colecao_id": None,
+        "colecao": None,
         "categoria_id": None,
         "marca_ids": None,
         "cor_ids": None,
@@ -138,16 +125,14 @@ def _resolver_ids(sessao: Session, filtros: FiltrosProduto) -> dict | None:
     }
 
     if filtros.colecao:
-        colecao_id = sessao.scalar(select(Colecao.id).where(Colecao.slug == filtros.colecao))
-        if colecao_id is None:
+        if colecao_por_slug(filtros.colecao) is None:
             return None
-        resolvidos["colecao_id"] = colecao_id
+        resolvidos["colecao"] = filtros.colecao
 
     if filtros.categoria:
         categoria_id = sessao.scalar(
             select(Categoria.id).where(
                 Categoria.slug == filtros.categoria,
-                Categoria.colecao_id == resolvidos["colecao_id"],
                 # Categoria escondida responde como slug desconhecido: o link direto
                 # não ressuscita a categoria tirada da vitrine. Os produtos dela
                 # continuam em /todos, novidades, busca, marcas e nas outras categorias.
@@ -198,14 +183,17 @@ def _aplicar_filtros(stmt: Select, filtros: FiltrosProduto, ids: dict) -> Select
     stmt = stmt.where(Produto.status != "oculto")
 
     if ids["novidades_desde"] is not None:
-        stmt = stmt.where(Produto.criado_em >= ids["novidades_desde"])
+        stmt = stmt.where(
+            Produto.criado_em >= ids["novidades_desde"], Produto.em_novidades.is_(True)
+        )
 
     if ids["categoria_id"] is not None:
-        # categoria_id já implica a coleção (a FK composta garante), então não
-        # precisa filtrar as duas coisas.
         stmt = stmt.where(pertence_categoria(ids["categoria_id"]))
-    elif ids["colecao_id"] is not None:
-        stmt = stmt.where(pertence_colecao(ids["colecao_id"]))
+
+    if ids["colecao"] is not None:
+        # Categoria e público são filtros independentes (0015): `?colecao=feminino&categoria=bolsas`
+        # são as bolsas do público feminino; unissex entra nos dois.
+        stmt = stmt.where(pertence_colecao(ids["colecao"]))
 
     if ids["marca_ids"] is not None:
         stmt = stmt.where(Produto.marca_id.in_(ids["marca_ids"]))
@@ -280,7 +268,8 @@ def _colunas_do_produto():
         Produto.nome_ordenacao,
         Produto.marca_id,
         Produto.categoria_id,
-        Produto.colecao_id,
+        Produto.feminino,
+        Produto.masculino,
     )
 
 
@@ -299,14 +288,13 @@ def _envolver_com_juncoes(p) -> Select:
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(p.c.feminino, p.c.masculino).label("colecao_nome"),
+            slug_da_colecao(p.c.feminino).label("colecao_slug"),
             ProdutoImagem.url.label("capa_url"),
             ProdutoImagem.alt.label("capa_alt"),
         )
         .join(Marca, Marca.id == p.c.marca_id)
         .join(Categoria, Categoria.id == p.c.categoria_id)
-        .join(Colecao, Colecao.id == p.c.colecao_id)
         # A capa entra pelo índice único parcial uq_produto_imagens_capa;
         # produto sem imagem vem com capa nula, sem placeholder.
         .outerjoin(
@@ -371,7 +359,9 @@ def _buscar_por_codigo_exato(
         .limit(1)
     )
     if novidades_desde is not None:
-        interna = interna.where(Produto.criado_em >= novidades_desde)
+        interna = interna.where(
+            Produto.criado_em >= novidades_desde, Produto.em_novidades.is_(True)
+        )
     linha = sessao.execute(_envolver_com_juncoes(interna.subquery("p"))).first()
     if linha is None:
         return None
@@ -381,8 +371,6 @@ def _buscar_por_codigo_exato(
 
 
 def listar_produtos(sessao: Session, filtros: FiltrosProduto) -> Pagina[ProdutoItem]:
-    _validar_parametros(filtros)
-
     por_pagina = max(1, min(filtros.por_pagina, POR_PAGINA_MAXIMO))
     cursor = _ler_cursor(filtros)
     novidades_desde = _inicio_das_novidades(filtros)
@@ -461,12 +449,11 @@ def obter_produto(sessao: Session, codigo: str) -> ProdutoDetalhe:
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(Produto.feminino, Produto.masculino).label("colecao_nome"),
+            slug_da_colecao(Produto.feminino).label("colecao_slug"),
         )
         .join(Marca, Marca.id == Produto.marca_id)
         .join(Categoria, Categoria.id == Produto.categoria_id)
-        .join(Colecao, Colecao.id == Produto.colecao_id)
         .where(Produto.codigo == codigo.strip().upper(), Produto.status != "oculto")
     ).first()
 

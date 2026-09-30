@@ -24,28 +24,9 @@ from vip_api.modelos.base import PRODUTO_STATUS, VARIACAO_TIPO, Base
 from vip_api.texto import normalizar
 
 
-class Colecao(Base):
-    __tablename__ = "colecoes"
-    __table_args__ = (
-        UniqueConstraint("slug", name="uq_colecoes_slug"),
-        # Alvo da FK composta de produtos (impede coleção dessincronizada da
-        # categoria) — declarada em categorias, mas o par (id, colecao_id)
-        # precisa ser único lá, não aqui.
-    )
-
-    id: Mapped[int] = mapped_column(SmallInteger, Identity(), primary_key=True)
-    nome: Mapped[str] = mapped_column(String(40))
-    slug: Mapped[str] = mapped_column(String(40))
-    ordem: Mapped[int] = mapped_column(SmallInteger, server_default="0")
-    ativa: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
-    criado_em: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now()
-    )
-    atualizado_em: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now()
-    )
-
-    categorias: Mapped[list["Categoria"]] = relationship(back_populates="colecao")
+# As coleções Feminino e Masculino não são tabela: são o PÚBLICO do produto
+# (`Produto.feminino` / `Produto.masculino`, as duas marcadas = unissex). As
+# constantes e as expressões SQL ficam em `servicos/colecoes.py`.
 
 
 class Marca(Base):
@@ -110,16 +91,8 @@ class Cor(Base):
 class Categoria(Base):
     __tablename__ = "categorias"
     __table_args__ = (
-        # Slug é único POR COLEÇÃO, nunca global: "bolsas" existe em Feminino
-        # e em Masculino, e são categorias diferentes.
-        UniqueConstraint("colecao_id", "slug", name="uq_categorias_colecao_slug"),
-        UniqueConstraint("id", "colecao_id", name="uq_categorias_id_colecao"),
-        ForeignKeyConstraint(
-            ["colecao_id"],
-            ["colecoes.id"],
-            name="fk_categorias_colecao_id_colecoes",
-            ondelete="RESTRICT",
-        ),
+        # Categoria não pertence mais a coleção (0015): o slug é único na tabela.
+        UniqueConstraint("slug", name="uq_categorias_slug"),
         CheckConstraint(
             "destaque = false OR destaque_ordem IS NOT NULL",
             name="ck_categorias_destaque_ordem",
@@ -130,10 +103,17 @@ class Categoria(Base):
             "id",
             postgresql_where=text("destaque"),
         ),
+        # Card da home (0016): cada lado tem no máximo uma categoria.
+        CheckConstraint("card_home IN ('esquerda', 'direita')", name="ck_categorias_card_home"),
+        Index(
+            "uq_categorias_card_home",
+            "card_home",
+            unique=True,
+            postgresql_where=text("card_home IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
-    colecao_id: Mapped[int] = mapped_column(SmallInteger)
     nome: Mapped[str] = mapped_column(String(80))
     slug: Mapped[str] = mapped_column(String(80))
     imagem_url: Mapped[str | None] = mapped_column(Text)
@@ -141,14 +121,15 @@ class Categoria(Base):
     destaque_ordem: Mapped[int | None] = mapped_column(Integer)
     ordem: Mapped[int] = mapped_column(Integer, server_default="0")
     ativa: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Card da home (0016): 'esquerda' (no lugar do Feminino) ou 'direita' (no do Masculino).
+    card_home: Mapped[str | None] = mapped_column(String(10))
+    card_home_imagem_url: Mapped[str | None] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
     atualizado_em: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
-
-    colecao: Mapped["Colecao"] = relationship(back_populates="categorias")
 
 
 class Produto(Base):
@@ -158,19 +139,18 @@ class Produto(Base):
         ForeignKeyConstraint(
             ["marca_id"], ["marcas.id"], name="fk_produtos_marca_id_marcas", ondelete="RESTRICT"
         ),
-        # FK composta: garante que colecao_id do produto é sempre o mesmo da
-        # sua categoria. A duplicação de colecao_id existe para o filtro
-        # ?colecao= não precisar de JOIN; esta FK é o que a torna segura.
         ForeignKeyConstraint(
-            ["categoria_id", "colecao_id"],
-            ["categorias.id", "categorias.colecao_id"],
-            name="fk_produtos_categoria_colecao_categorias",
+            ["categoria_id"],
+            ["categorias.id"],
+            name="fk_produtos_categoria_id_categorias",
             ondelete="RESTRICT",
         ),
         CheckConstraint(
             "destaque = false OR destaque_ordem IS NOT NULL",
             name="ck_produtos_destaque_ordem",
         ),
+        # Todo produto é de pelo menos um público (feminino, masculino ou os dois).
+        CheckConstraint("feminino OR masculino", name="ck_produtos_publico"),
         # Os índices abaixo são a espinha dorsal da paginação por cursor:
         # coluna de filtro à esquerda, par de ordenação à direita. O DESC faz
         # parte da definição — sem ele o índice não serve à ordenação
@@ -215,19 +195,30 @@ class Produto(Base):
             "id",
             postgresql_where=text("status <> 'oculto'::produto_status"),
         ),
+        # /feminino e /masculino: um par de índices parciais por público.
         Index(
-            "ix_produtos_colecao_recentes",
-            "colecao_id",
+            "ix_produtos_feminino_recentes",
             text("criado_em DESC"),
             text("id DESC"),
-            postgresql_where=text("status <> 'oculto'::produto_status"),
+            postgresql_where=text("feminino AND status <> 'oculto'::produto_status"),
         ),
         Index(
-            "ix_produtos_colecao_nome",
-            "colecao_id",
+            "ix_produtos_feminino_nome",
             "nome_ordenacao",
             "id",
-            postgresql_where=text("status <> 'oculto'::produto_status"),
+            postgresql_where=text("feminino AND status <> 'oculto'::produto_status"),
+        ),
+        Index(
+            "ix_produtos_masculino_recentes",
+            text("criado_em DESC"),
+            text("id DESC"),
+            postgresql_where=text("masculino AND status <> 'oculto'::produto_status"),
+        ),
+        Index(
+            "ix_produtos_masculino_nome",
+            "nome_ordenacao",
+            "id",
+            postgresql_where=text("masculino AND status <> 'oculto'::produto_status"),
         ),
         # Sem WHERE: o painel lista os ocultos também.
         Index("ix_produtos_admin", "status", text("criado_em DESC"), text("id DESC")),
@@ -264,10 +255,14 @@ class Produto(Base):
     descricao: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(PRODUTO_STATUS, server_default="normal")
     destaque: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # Fora da página Novidades quando falso (0017); a janela de 14 dias vale além disso.
+    em_novidades: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     destaque_ordem: Mapped[int | None] = mapped_column(Integer)
     marca_id: Mapped[int] = mapped_column(Integer)
     categoria_id: Mapped[int] = mapped_column(Integer)
-    colecao_id: Mapped[int] = mapped_column(SmallInteger)
+    # Público do produto (0015). As duas marcadas = unissex.
+    feminino: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    masculino: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     criado_em: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -279,11 +274,6 @@ class Produto(Base):
     categoria: Mapped["Categoria"] = relationship(
         foreign_keys=[categoria_id],
         primaryjoin="Produto.categoria_id == Categoria.id",
-        viewonly=True,
-    )
-    colecao: Mapped["Colecao"] = relationship(
-        foreign_keys=[colecao_id],
-        primaryjoin="Produto.colecao_id == Colecao.id",
         viewonly=True,
     )
     imagens: Mapped[list["ProdutoImagem"]] = relationship(

@@ -4,6 +4,8 @@ Quatro rotas separadas custariam quatro idas e voltas de rede; uma home que
 faz oito requisições passa quase um segundo só esperando (tarefa 30 do plano).
 """
 
+from typing import Literal
+
 from vip_api.esquemas.base import EsquemaResposta
 from vip_api.esquemas.navegacao import CategoriaDestaque, MarcaItem
 from vip_api.esquemas.produto import ProdutoItem
@@ -19,8 +21,20 @@ class BannerItem(EsquemaResposta):
     link_url: str | None = None
 
 
+class CardColecao(EsquemaResposta):
+    """Categoria que o dono pôs num dos dois cards de coleção da home (no lugar do Feminino, à
+    esquerda, ou do Masculino, à direita). `imagem_url` é a do card; sem ela, a da categoria."""
+
+    lado: Literal["esquerda", "direita"]
+    id: int
+    nome: str
+    slug: str
+    imagem_url: str | None = None
+
+
 class Home(EsquemaResposta):
     banners: list[BannerItem]
     destaques: list[ProdutoItem]
     categorias_destaque: list[CategoriaDestaque]
+    cards_colecao: list[CardColecao] = []
     marcas: list[MarcaItem]

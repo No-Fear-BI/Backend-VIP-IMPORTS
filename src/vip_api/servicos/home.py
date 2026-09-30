@@ -6,20 +6,20 @@ LEFT JOIN, e não numa consulta por produto (o N+1 clássico, que aqui viraria
 13 consultas em vez de 4).
 """
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from vip_api.esquemas.home import BannerItem, Home
+from vip_api.esquemas.home import BannerItem, CardColecao, Home
 from vip_api.esquemas.navegacao import CategoriaDestaque
 from vip_api.esquemas.produto import Capa, ProdutoItem, Referencia
 from vip_api.modelos.catalogo import (
     Banner,
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
 )
+from vip_api.servicos.colecoes import nome_da_colecao, slug_da_colecao
 from vip_api.servicos.navegacao import listar_marcas
 
 LIMITE_DESTAQUES = 12
@@ -65,14 +65,13 @@ def _destaques(sessao: Session) -> list[ProdutoItem]:
             Marca.slug.label("marca_slug"),
             Categoria.nome.label("categoria_nome"),
             Categoria.slug.label("categoria_slug"),
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            nome_da_colecao(Produto.feminino, Produto.masculino).label("colecao_nome"),
+            slug_da_colecao(Produto.feminino).label("colecao_slug"),
             ProdutoImagem.url.label("capa_url"),
             ProdutoImagem.alt.label("capa_alt"),
         )
         .join(Marca, Marca.id == Produto.marca_id)
         .join(Categoria, Categoria.id == Produto.categoria_id)
-        .join(Colecao, Colecao.id == Produto.colecao_id)
         # A capa vem junto, no mesmo SELECT. É o que evita o N+1.
         .outerjoin(
             ProdutoImagem,
@@ -99,37 +98,53 @@ def _destaques(sessao: Session) -> list[ProdutoItem]:
     ]
 
 
-def _categorias_destaque(sessao: Session) -> list[CategoriaDestaque]:
+def _categorias_da_home(
+    sessao: Session,
+) -> tuple[list[CategoriaDestaque], list[CardColecao]]:
+    """As categorias em destaque E as dos cards de coleção, numa consulta só (o orçamento da
+    home é de quatro). Categoria escondida não aparece em nenhum dos dois."""
     linhas = sessao.execute(
         select(
             Categoria.id,
             Categoria.nome,
             Categoria.slug,
             Categoria.imagem_url,
-            Colecao.nome.label("colecao_nome"),
-            Colecao.slug.label("colecao_slug"),
+            Categoria.destaque,
+            Categoria.card_home,
+            Categoria.card_home_imagem_url,
         )
-        .join(Colecao, Colecao.id == Categoria.colecao_id)
-        .where(Categoria.destaque.is_(True), Categoria.ativa.is_(True))
+        .where(
+            Categoria.ativa.is_(True),
+            or_(Categoria.destaque.is_(True), Categoria.card_home.is_not(None)),
+        )
         .order_by(Categoria.destaque_ordem.asc(), Categoria.id.asc())
     ).all()
 
-    return [
-        CategoriaDestaque(
+    destaques = [
+        CategoriaDestaque(id=l.id, nome=l.nome, slug=l.slug, imagem_url=l.imagem_url)
+        for l in linhas
+        if l.destaque
+    ]
+    cards = [
+        CardColecao(
+            lado=l.card_home,
             id=l.id,
             nome=l.nome,
             slug=l.slug,
-            imagem_url=l.imagem_url,
-            colecao=Referencia(nome=l.colecao_nome, slug=l.colecao_slug),
+            imagem_url=l.card_home_imagem_url or l.imagem_url,
         )
         for l in linhas
+        if l.card_home
     ]
+    return destaques, cards
 
 
 def montar_home(sessao: Session) -> Home:
+    categorias_destaque, cards_colecao = _categorias_da_home(sessao)
     return Home(
         banners=_banners(sessao),
         destaques=_destaques(sessao),
-        categorias_destaque=_categorias_destaque(sessao),
+        categorias_destaque=categorias_destaque,
+        cards_colecao=cards_colecao,
         marcas=listar_marcas(sessao),
     )

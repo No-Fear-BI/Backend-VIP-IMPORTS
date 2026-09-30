@@ -6,9 +6,11 @@ os campos que só o painel edita, e a listagem traz a contagem de produtos —
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import Field, field_validator
 
+from vip_api.configuracao import configuracao
 from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
 
 # Proposta comercial, item 2.1: "banner principal em carrossel com até 4
@@ -23,7 +25,12 @@ def _exigir_https(valor: str | None) -> str | None:
     limpo = valor.strip()
     if not limpo:
         return None
-    if not limpo.lower().startswith("https://"):
+    # A mídia que o próprio painel envia (`POST .../upload`) volta com o endereço de
+    # IMAGENS_URL_BASE, que em desenvolvimento é http puro (`http://localhost:8000/midia`).
+    # Sem esta exceção, a imagem recém-enviada não podia ser salva no banner nem no card da home.
+    # Em produção IMAGENS_URL_BASE já é obrigatoriamente https (configuracao.py).
+    propria = configuracao.IMAGENS_URL_BASE.rstrip("/") + "/"
+    if not (limpo.lower().startswith("https://") or limpo.startswith(propria)):
         raise ValueError("A URL precisa começar com https://.")
     return limpo
 
@@ -112,8 +119,6 @@ class CorEditar(EsquemaEntrada):
 
 class CategoriaAdmin(EsquemaResposta):
     id: int
-    colecao_id: int
-    colecao_slug: str
     nome: str
     slug: str
     imagem_url: str | None = None
@@ -121,13 +126,14 @@ class CategoriaAdmin(EsquemaResposta):
     destaque_ordem: int | None = None
     ordem: int
     ativa: bool
+    card_home: Literal["esquerda", "direita"] | None = None
+    card_home_imagem_url: str | None = None
     total_produtos: int
     criado_em: datetime
     atualizado_em: datetime
 
 
 class CategoriaCriar(EsquemaEntrada):
-    colecao_id: int
     nome: str = Field(min_length=1, max_length=80)
     slug: str | None = Field(None, min_length=1, max_length=80)
     imagem_url: str | None = None
@@ -135,12 +141,13 @@ class CategoriaCriar(EsquemaEntrada):
     destaque_ordem: int | None = None
     ordem: int = 0
     ativa: bool = True
+    card_home: Literal["esquerda", "direita"] | None = None
+    card_home_imagem_url: str | None = None
 
-    _validar_imagem = field_validator("imagem_url")(_exigir_https)
+    _validar_imagem = field_validator("imagem_url", "card_home_imagem_url")(_exigir_https)
 
 
 class CategoriaEditar(EsquemaEntrada):
-    colecao_id: int | None = None
     nome: str | None = Field(None, min_length=1, max_length=80)
     slug: str | None = Field(None, min_length=1, max_length=80)
     imagem_url: str | None = None
@@ -148,8 +155,12 @@ class CategoriaEditar(EsquemaEntrada):
     destaque_ordem: int | None = None
     ordem: int | None = None
     ativa: bool | None = None
+    # `null` tira a categoria do card (e apaga a imagem do card); o lado ocupa o lugar de quem
+    # já estava nele.
+    card_home: Literal["esquerda", "direita"] | None = None
+    card_home_imagem_url: str | None = None
 
-    _validar_imagem = field_validator("imagem_url")(_exigir_https)
+    _validar_imagem = field_validator("imagem_url", "card_home_imagem_url")(_exigir_https)
 
 
 # ======================================================================

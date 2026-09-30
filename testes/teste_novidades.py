@@ -182,3 +182,30 @@ def teste_cursor_de_novidades_nao_vale_sem_o_filtro_e_vice_versa(sem_sessao, mas
 def teste_valor_invalido_da_400(sem_sessao, massa, valor):
     resposta = sem_sessao.get(URL, params={"novidades": valor})
     assert resposta.status_code == 400
+
+
+def teste_fora_das_novidades_some_so_de_la(sem_sessao, sessao, massa):
+    """`em_novidades` falso tira o produto de ?novidades=true, mesmo dentro dos 14 dias, e
+    ele segue na listagem sem o filtro."""
+    massa["recente"].em_novidades = False
+    sessao.commit()
+    assert massa["recente"].id not in _ids(sem_sessao.get(URL, params={"novidades": "true"}))
+    assert massa["recente"].id in _ids(sem_sessao.get(URL))
+
+
+def teste_painel_cria_e_edita_a_flag_de_novidades(admin_logado, sessao, massa):
+    rota = "/api/v1/admin/produtos"
+    base = {
+        "nome": "Bolsa Flag",
+        "marcaId": massa["marca"].id,
+        "categoriaId": massa["bolsas"].id,
+        "publicos": ["feminino"],
+    }
+    criado = admin_logado.post(rota, json=base)
+    assert criado.status_code == 201, criado.text
+    assert criado.json()["emNovidades"] is True
+    sem = admin_logado.post(rota, json={**base, "nome": "Bolsa Sem", "emNovidades": False})
+    assert sem.json()["emNovidades"] is False
+    editado = admin_logado.patch(f"{rota}/{criado.json()['id']}", json={"emNovidades": False})
+    assert editado.status_code == 200, editado.text
+    assert editado.json()["emNovidades"] is False

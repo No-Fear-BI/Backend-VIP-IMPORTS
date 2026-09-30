@@ -63,7 +63,7 @@ from semear_taxonomia_real import (  # noqa: E402
 )
 from vip_api.banco import SessaoLocal  # noqa: E402
 from vip_api.configuracao import configuracao  # noqa: E402
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto  # noqa: E402
+from vip_api.modelos.catalogo import Categoria, Marca, Produto  # noqa: E402
 from vip_api.texto import gerar_slug  # noqa: E402
 
 CARIMBO_MASSA_SINTETICA = "gerar_massa"
@@ -82,9 +82,9 @@ def _slugs_marcas_reais() -> set[str]:
     return {gerar_slug(nome) for nome in _marcas_do_csv(linhas)}
 
 
-def _slugs_categorias_reais() -> set[tuple[str, str]]:
-    """{(slug_colecao, slug_categoria)}."""
-    return {(colecao, gerar_slug(nome)) for nome, colecao in CATEGORIAS_REAIS}
+def _slugs_categorias_reais() -> set[str]:
+    """{slug_categoria} — o slug é único na tabela desde a 0015."""
+    return {gerar_slug(nome) for nome, _publico in CATEGORIAS_REAIS}
 
 
 def _checar_carimbo(sessao: Session) -> None:
@@ -156,12 +156,10 @@ def _remover_marcas_orfas(sessao: Session, slugs_reais: set[str]) -> list[str]:
 
 
 def _remover_categorias_orfas(
-    sessao: Session, pares_reais: set[tuple[str, str]]
+    sessao: Session, slugs_reais: set[str]
 ) -> list[str]:
-    colecao_slug_por_id = {c.id: c.slug for c in sessao.scalars(select(Colecao))}
-
     candidatas = sessao.execute(
-        select(Categoria.id, Categoria.nome, Categoria.slug, Categoria.colecao_id)
+        select(Categoria.id, Categoria.nome, Categoria.slug)
         .outerjoin(Produto, Produto.categoria_id == Categoria.id)
         .group_by(Categoria.id)
         .having(func.count(Produto.id) == 0)
@@ -169,8 +167,7 @@ def _remover_categorias_orfas(
 
     removidas = []
     for cat in candidatas:
-        colecao_slug = colecao_slug_por_id[cat.colecao_id]
-        if (colecao_slug, cat.slug) in pares_reais:
+        if cat.slug in slugs_reais:
             continue
 
         total = sessao.scalar(
@@ -178,14 +175,14 @@ def _remover_categorias_orfas(
         )
         if total:
             sys.exit(
-                f"RECUSANDO RODAR: categoria {cat.nome!r}/{colecao_slug} "
+                f"RECUSANDO RODAR: categoria {cat.nome!r} "
                 f"tinha {total} produto(s) no instante da exclusão — só pode ser "
                 f"produto com origem_url diferente de {CARIMBO_MASSA_SINTETICA!r}. "
                 "Abortando antes de apagar qualquer coisa."
             )
 
         sessao.execute(delete(Categoria).where(Categoria.id == cat.id))
-        removidas.append(f"{cat.nome!r}/{colecao_slug} (slug {cat.slug!r})")
+        removidas.append(f"{cat.nome!r} (slug {cat.slug!r})")
     return removidas
 
 

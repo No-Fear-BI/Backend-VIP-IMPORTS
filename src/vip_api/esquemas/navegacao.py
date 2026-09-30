@@ -5,7 +5,6 @@ com 40 itens porque três estão ocultos, o cliente abre chamado — e tem razã
 """
 
 from vip_api.esquemas.base import EsquemaResposta
-from vip_api.esquemas.produto import Referencia
 
 
 class MarcaItem(EsquemaResposta):
@@ -40,12 +39,10 @@ class CategoriaItem(EsquemaResposta):
 
 
 class CategoriaDestaque(EsquemaResposta):
-    """Categoria na home: carrega a coleção junto porque o slug sozinho não
-    identifica nada — "bolsas" existe em Feminino e em Masculino, e o link
-    precisa dos dois para montar `?colecao=&categoria=`."""
+    """Categoria na home. Desde a 0015 o slug é único na tabela (a categoria não tem
+    mais coleção), então o link é só `?categoria=`."""
 
     id: int
     nome: str
     slug: str
     imagem_url: str | None = None
-    colecao: Referencia

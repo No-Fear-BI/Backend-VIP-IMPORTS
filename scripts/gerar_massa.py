@@ -52,7 +52,6 @@ from vip_api.configuracao import configuracao  # noqa: E402
 from vip_api.modelos.catalogo import (  # noqa: E402
     Banner,
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
@@ -199,26 +198,23 @@ def _slug(texto: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in base.lower()).strip("-")
 
 
-def _garantir_categorias(sessao: Session) -> dict[tuple[int, str], Categoria]:
-    colecoes = {c.slug: c for c in sessao.scalars(select(Colecao))}
-    if not colecoes:
-        sys.exit("Nenhuma coleção no banco. Rode `alembic upgrade head` primeiro.")
-
-    existentes = {(c.colecao_id, c.slug): c for c in sessao.scalars(select(Categoria))}
+def _garantir_categorias(sessao: Session) -> dict[tuple[str, str], Categoria]:
+    """Devolve {(público, slug): Categoria}. Desde a 0015 a categoria é única por slug: "Bolsas"
+    do feminino e do masculino são a MESMA linha, e o público só decide de quem é o produto."""
+    existentes = {c.slug: c for c in sessao.scalars(select(Categoria))}
+    resultado: dict[tuple[str, str], Categoria] = {}
     criadas = 0
     for slug_colecao, categorias in CATEGORIAS.items():
-        colecao = colecoes[slug_colecao]
         for ordem, (nome, slug) in enumerate(categorias):
-            chave = (colecao.id, slug)
-            if chave in existentes:
-                continue
-            categoria = Categoria(colecao_id=colecao.id, nome=nome, slug=slug, ordem=ordem)
-            sessao.add(categoria)
-            existentes[chave] = categoria
-            criadas += 1
+            if slug not in existentes:
+                categoria = Categoria(nome=nome, slug=slug, ordem=ordem)
+                sessao.add(categoria)
+                existentes[slug] = categoria
+                criadas += 1
+            resultado[(slug_colecao, slug)] = existentes[slug]
     sessao.commit()
     print(f"categorias: {criadas} criadas, {len(existentes)} no total")
-    return existentes
+    return resultado
 
 
 def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
@@ -235,12 +231,11 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
 
     marcas_por_slug = {_slug(nome): (nome, prefixo, quantidade) for nome, prefixo, quantidade in MARCAS}
 
-    slug_da_colecao = {c.id: c.slug for c in sessao.scalars(select(Colecao))}
-    categorias_por_colecao: dict[int, list[Categoria]] = {}
-    for (colecao_id, _slug_cat), categoria in categorias.items():
-        categorias_por_colecao.setdefault(colecao_id, []).append(categoria)
-    ids_colecao = sorted(categorias_por_colecao)
-    pesos_colecao = [PESO_COLECAO.get(slug_da_colecao[i], 1) for i in ids_colecao]
+    categorias_por_colecao: dict[str, list[Categoria]] = {}
+    for (publico, _slug_cat), categoria in categorias.items():
+        categorias_por_colecao.setdefault(publico, []).append(categoria)
+    publicos = sorted(categorias_por_colecao)
+    pesos_colecao = [PESO_COLECAO.get(p, 1) for p in publicos]
 
     sequencia_por_marca: dict[str, int] = {}
     for codigo in codigos_existentes:
@@ -269,8 +264,8 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
         nome_marca, prefixo, _quantidade = marcas_por_slug[slug_marca]
         marca = marcas[slug_marca]
 
-        colecao_id = aleatorio.choices(ids_colecao, weights=pesos_colecao, k=1)[0]
-        opcoes = categorias_por_colecao[colecao_id]
+        publico = aleatorio.choices(publicos, weights=pesos_colecao, k=1)[0]
+        opcoes = categorias_por_colecao[publico]
         categoria = aleatorio.choices(
             opcoes, weights=[PESO_CATEGORIA.get(c.slug, 5) for c in opcoes], k=1
         )[0]
@@ -328,7 +323,8 @@ def _gerar_produtos(sessao: Session, marcas: dict, categorias: dict) -> None:
             # sorteio por produto sem relação nenhuma com esse número.
             marca_id=marca.id,
             categoria_id=categoria.id,
-            colecao_id=colecao_id,
+            feminino=publico == "feminino",
+            masculino=publico == "masculino",
             criado_em=criado_em,
         )
 
@@ -450,17 +446,8 @@ def _marcar_categorias_destaque(sessao: Session) -> None:
         print(f"categorias em destaque: {ja_marcadas} já marcadas")
         return
 
-    # Três de cada coleção, alternadas: a home precisa provar que devolve a
-    # coleção de cada categoria, e isso não aparece se todas forem da mesma.
-    por_colecao: dict[int, list[Categoria]] = {}
-    for categoria in sessao.scalars(select(Categoria).order_by(Categoria.id)):
-        por_colecao.setdefault(categoria.colecao_id, []).append(categoria)
-
-    escolhidas = []
-    for posicao in range(3):
-        for colecao_id in sorted(por_colecao):
-            if posicao < len(por_colecao[colecao_id]):
-                escolhidas.append(por_colecao[colecao_id][posicao])
+    # As seis primeiras: a categoria não tem coleção (0015), então não há o que alternar.
+    escolhidas = list(sessao.scalars(select(Categoria).order_by(Categoria.id).limit(6)))
 
     for posicao, categoria in enumerate(escolhidas, start=1):
         categoria.destaque = True

@@ -21,9 +21,10 @@ from vip_api.esquemas.base import (
     exigir_formato_do_cursor,
 )
 from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoResumo, SelecaoSaida
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto, ProdutoImagem, ProdutoVariacao
+from vip_api.modelos.catalogo import Categoria, Marca, Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente
 from vip_api.modelos.selecao import Selecao, SelecaoItem
+from vip_api.servicos.colecoes import nome_da_colecao
 
 SAUDACAO = "Olá! Tenho interesse nestes itens:"
 ASSINATURA = "Enviado pelo site."
@@ -74,7 +75,7 @@ def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
             Produto.nome,
             Marca.nome.label("marca_nome"),
             Categoria.nome.label("categoria_nome"),
-            Colecao.nome.label("colecao_nome"),
+            nome_da_colecao(Produto.feminino, Produto.masculino).label("colecao_nome"),
             ProdutoImagem.url.label("imagem_url"),
             _Tamanho.valor.label("variacao_tamanho"),
             _Cor.valor.label("variacao_cor"),
@@ -87,7 +88,6 @@ def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
         .join(Produto, Produto.id == CarrinhoItem.produto_id)
         .join(Marca, Marca.id == Produto.marca_id)
         .join(Categoria, Categoria.id == Produto.categoria_id)
-        .join(Colecao, Colecao.id == Produto.colecao_id)
         .outerjoin(
             ProdutoImagem,
             and_(ProdutoImagem.produto_id == Produto.id, ProdutoImagem.capa.is_(True)),

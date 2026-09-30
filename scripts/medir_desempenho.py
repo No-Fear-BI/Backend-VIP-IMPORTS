@@ -42,7 +42,7 @@ from sqlalchemy import event, func, select  # noqa: E402
 
 from vip_api.banco import SessaoLocal, engine  # noqa: E402
 from vip_api.modelos.admin import Administrador  # noqa: E402
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca, Produto  # noqa: E402
+from vip_api.modelos.catalogo import Categoria, Marca, Produto  # noqa: E402
 from vip_api.principal import app  # noqa: E402
 from vip_api.servicos.admin import criar_sessao_admin, encerrar_sessao_admin  # noqa: E402
 
@@ -297,6 +297,10 @@ def travessia(base: str, ordem: str, visiveis: set[int]) -> Resultado:
 # ======================================================================
 
 
+# Desde a 0015 a categoria não tem coleção: o roteiro mede o público feminino.
+COLECAO_DO_ROTEIRO = "feminino"
+
+
 def _alvos(sessao) -> tuple[list[Medicao], set[int]]:
     """Os parâmetros saem do próprio banco: a maior e a menor marca, um produto
     da maior marca numa categoria cheia, a última página do painel. Assim o
@@ -310,10 +314,9 @@ def _alvos(sessao) -> tuple[list[Medicao], set[int]]:
     maior, menor = por_marca[0], por_marca[-1]
 
     categoria = sessao.execute(
-        select(Categoria.id, Categoria.slug, Colecao.slug.label("colecao"))
-        .join(Colecao, Colecao.id == Categoria.colecao_id)
+        select(Categoria.id, Categoria.slug)
         .join(Produto, Produto.categoria_id == Categoria.id)
-        .group_by(Categoria.id, Colecao.slug)
+        .group_by(Categoria.id)
         .order_by(func.count(Produto.id).desc())
         .limit(1)
     ).one()
@@ -338,7 +341,7 @@ def _alvos(sessao) -> tuple[list[Medicao], set[int]]:
         Medicao(
             "produtos: categoria mais cheia",
             "/produtos",
-            {"colecao": categoria.colecao, "categoria": categoria.slug},
+            {"colecao": COLECAO_DO_ROTEIRO, "categoria": categoria.slug},
             consultas_max=4,
         ),
         Medicao("produtos: busca 'bolsa'", "/produtos", {"busca": "bolsa"}, p95_ms=P95_BUSCA_MS, consultas_max=4),
@@ -347,7 +350,7 @@ def _alvos(sessao) -> tuple[list[Medicao], set[int]]:
         Medicao("produto: detalhe", f"/produtos/{codigo}", consultas_max=3),
         Medicao("produto: relacionados", f"/produtos/{codigo}/relacionados", consultas_max=2),
         Medicao("marcas", "/marcas", consultas_max=1),
-        Medicao("categorias da coleção", f"/colecoes/{categoria.colecao}/categorias", consultas_max=2),
+        Medicao("categorias da coleção", f"/colecoes/{COLECAO_DO_ROTEIRO}/categorias", consultas_max=2),
         Medicao("home", "/home", consultas_max=4),
     ]
     painel = [

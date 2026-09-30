@@ -23,9 +23,9 @@ roteador = APIRouter(tags=["produtos"])
 @roteador.get("/produtos", response_model=Pagina[ProdutoItem])
 def listar(
     sessao: Session = Depends(obter_sessao),
-    colecao: str | None = Query(None, description="Slug da coleção: feminino ou masculino."),
+    colecao: str | None = Query(None, description="Público: feminino ou masculino (unissex aparece nos dois)."),
     categoria: str | None = Query(
-        None, description="Slug da categoria. Exige `colecao` junto — o slug é único por coleção."
+        None, description="Slug da categoria (único na tabela). Combina com `colecao`."
     ),
     marca: str | None = Query(
         None, description="Slug da marca. Aceita várias separadas por vírgula."

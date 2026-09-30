@@ -140,7 +140,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from sqlalchemy.orm import Session  # noqa: E402
 
 from vip_api.banco import SessaoLocal  # noqa: E402
-from vip_api.modelos.catalogo import Categoria, Colecao, Marca  # noqa: E402
+from vip_api.modelos.catalogo import Categoria, Marca  # noqa: E402
 from vip_api.servicos.imagens_processamento import abrir_imagem  # noqa: E402
 from vip_api.texto import normalizar  # noqa: E402
 
@@ -319,8 +319,8 @@ def _importar_linha(
     saida_dir: Path | None,
     url_base: str | None,
     cache_marcas: dict[str, Marca],
-    cache_colecoes: dict[str, Colecao],
-    cache_categorias: dict[tuple[int, str], Categoria],
+    cache_colecoes: dict,
+    cache_categorias: dict[str, Categoria],
     codigos_vistos: dict[str, int],
 ) -> bool:
     """Devolve True se criou, False se atualizou. Levanta exceção se a linha
@@ -438,8 +438,8 @@ def main() -> None:
 
     relatorio = Relatorio()
     cache_marcas: dict[str, Marca] = {}
-    cache_colecoes: dict[str, Colecao] = {}
-    cache_categorias: dict[tuple[int, str], Categoria] = {}
+    cache_colecoes: dict = {}
+    cache_categorias: dict[str, Categoria] = {}
     # codigo_origem -> linha onde apareceu primeiro NESTE arquivo, só para
     # detectar repetição dentro da própria execução (ver _importar_linha).
     codigos_vistos: dict[str, int] = {}

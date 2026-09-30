@@ -28,7 +28,6 @@ from sqlalchemy.orm import Session
 
 from vip_api.modelos.catalogo import (
     Categoria,
-    Colecao,
     Cor,
     Marca,
     Produto,
@@ -43,6 +42,7 @@ from vip_api.servicos.admin_produtos import (
 )
 from vip_api.servicos.admin_variacoes import obter_ou_criar_cor
 from vip_api.servicos.imagens_processamento import LADO_GRANDE, QUALIDADE_WEBP, redimensionado
+from vip_api.servicos.colecoes import colecao_por_slug
 from vip_api.texto import gerar_slug
 
 # Só desta importação em lote (CSV e Yupoo) — o upload ao vivo do painel não
@@ -69,42 +69,35 @@ def obter_ou_criar_marca(sessao: Session, nome: str, cache: dict[str, Marca]) ->
     return nova
 
 
-def obter_colecao(sessao: Session, valor: str, cache: dict[str, Colecao]) -> Colecao:
-    slug = gerar_slug(valor)
-    if slug in cache:
-        return cache[slug]
-
-    colecao = sessao.scalar(select(Colecao).where(Colecao.slug == slug))
-    if not colecao:
+def obter_colecao(sessao: Session, valor: str, cache: dict | None = None) -> dict:
+    """Valida o público da linha: só 'feminino' e 'masculino' (constantes desde a 0015).
+    `sessao` e `cache` ficam na assinatura só para os chamadores antigos."""
+    colecao = colecao_por_slug(gerar_slug(valor))
+    if colecao is None:
         raise ValueError(
             f"colecao {valor!r} não existe. Só 'feminino' e 'masculino' — "
             "esta importação não cria coleção nova (são só duas, fixas)."
         )
-    cache[slug] = colecao
     return colecao
 
 
-def obter_ou_criar_categoria(
-    sessao: Session, colecao: Colecao, nome: str, cache: dict[tuple[int, str], Categoria]
-) -> Categoria:
+def obter_ou_criar_categoria(sessao: Session, nome: str, cache: dict[str, Categoria]) -> Categoria:
+    """Categoria por slug (único na tabela desde a 0015), criada se não existir."""
     slug = gerar_slug(nome)
     if not slug:
         raise ValueError(f"categoria {nome!r} não vira um slug válido.")
-    chave = (colecao.id, slug)
-    if chave in cache:
-        return cache[chave]
+    if slug in cache:
+        return cache[slug]
 
-    existente = sessao.scalar(
-        select(Categoria).where(Categoria.colecao_id == colecao.id, Categoria.slug == slug)
-    )
+    existente = sessao.scalar(select(Categoria).where(Categoria.slug == slug))
     if existente:
-        cache[chave] = existente
+        cache[slug] = existente
         return existente
 
-    nova = Categoria(colecao_id=colecao.id, nome=nome, slug=slug)
+    nova = Categoria(nome=nome, slug=slug)
     sessao.add(nova)
     sessao.flush()
-    cache[chave] = nova
+    cache[slug] = nova
     return nova
 
 
@@ -186,8 +179,8 @@ def importar_produto(
     saida_dir: Path | None,
     url_base: str | None,
     cache_marcas: dict[str, Marca],
-    cache_colecoes: dict[str, Colecao],
-    cache_categorias: dict[tuple[int, str], Categoria],
+    cache_colecoes: dict | None = None,
+    cache_categorias: dict[str, Categoria],
     pasta_imagens: str | None = None,
 ) -> tuple[Produto, bool]:
     """Cria ou atualiza (por `codigo_origem`) um produto de verdade — marca e
@@ -205,7 +198,9 @@ def importar_produto(
 
     colecao = obter_colecao(sessao, valor_colecao, cache_colecoes)
     marca = obter_ou_criar_marca(sessao, nome_marca, cache_marcas)
-    categoria = obter_ou_criar_categoria(sessao, colecao, nome_categoria, cache_categorias)
+    categoria = obter_ou_criar_categoria(sessao, nome_categoria, cache_categorias)
+    feminino = colecao["slug"] == "feminino"
+    masculino = not feminino
 
     # Processa as fotos ANTES de tocar o produto: se uma imagem falhar ao
     # salvar, a operação falha sem ter mexido em nada do produto ainda (além
@@ -235,7 +230,8 @@ def importar_produto(
             descricao=descricao,
             marca_id=marca.id,
             categoria_id=categoria.id,
-            colecao_id=colecao.id,
+            feminino=feminino,
+            masculino=masculino,
         )
         prefixo = _prefixo_da_marca(sessao, marca.id)
         atribuir_codigo(sessao, produto, prefixo)  # já dá add()+flush(); produto.id existe daqui pra frente
@@ -252,7 +248,8 @@ def importar_produto(
         produto.origem_url = origem_url
         produto.marca_id = marca.id
         produto.categoria_id = categoria.id
-        produto.colecao_id = colecao.id
+        produto.feminino = feminino
+        produto.masculino = masculino
         # codigo e codigo_origem NUNCA mudam numa atualização: codigo é o
         # identificador público (URL /produto/:codigo) já divulgado, e
         # codigo_origem é a própria chave que achou este produto.

@@ -258,6 +258,7 @@ Regra decidida com o cliente: todo produto fica **no máximo 14 dias** na págin
 - **Combina com todos os outros filtros** (`colecao`, `categoria`, `marca`, `cor`, `busca`) e com `ordem`.
 - **Paginação:** `total` e `proximoCursor` valem dentro do recorte. O cursor guarda o filtro: um cursor de `?novidades=true` usado numa consulta sem ele (ou o contrário) devolve 400 `CURSOR_INVALIDO`. Ao trocar o filtro, recomece da primeira página.
 - **Produto novo:** para o produto criado no painel, o início da janela é a data de criação; para o que veio da revisão, é a data da aprovação (só ali ele entra na tabela `produtos`).
+- **Saída manual (30/09/2026, migração 0017):** `produtos.em_novidades` (padrão `true`). `?novidades=true` exige a flag ligada **e** os 14 dias. O painel lê `emNovidades` em `GET /admin/produtos` e `/{id}`, aceita em `POST /admin/produtos` (padrão `true`) e `PATCH /admin/produtos/{id}`, e `POST /admin/revisao` aceita `emNovidades` (padrão `true`) ao aprovar.
 - **`GET /home` não muda.** Os "destaques" da home são escolha manual da equipe (`destaque = true`, com ordem própria), não uma vitrine de novidades.
 
 ## Categoria escondida (`ativa: false`) (30/09/2026)
@@ -269,3 +270,20 @@ O painel passou a usar `ativa` em categorias (já existia no contrato). Regras, 
 - **Produto que já está numa categoria escondida (mudou):** `PATCH /admin/produtos/:id` com `categoriasIds` só barra a categoria inativa quando ela é ADICIONADA; reenviar uma que o produto já tem passa (antes, adicionar o segundo destino a um produto cuja categoria principal estava escondida dava 400). `categoriaId` igual à atual também passa.
 - **Produto novo (mudou):** `categoriaId` de categoria escondida agora dá 400 (`campos.categoriaId`) em `PATCH /admin/produtos/lote`, em `POST /admin/produtos` e em `PATCH /admin/produtos/:id` (quando é outra que a atual).
 
+## Feminino e Masculino viram o público do produto; categorias sem coleção (migração 0015, 30/09/2026)
+
+A tabela `colecoes` deixou de existir. Feminino e Masculino são o **público** de cada produto (`feminino`/`masculino`; as duas marcadas = unissex) e as categorias não pertencem mais a coleção.
+
+- **Mantido:** `GET /colecoes` (constantes, ids 1 e 2, slugs `feminino`/`masculino`), `GET /colecoes/:slug/categorias`, `GET /produtos?colecao=` (filtra pelo público; unissex aparece nos dois) e o campo `colecao` (`{nome, slug}`) dos produtos: é o público principal, e o nome vira "Unissex" quando são os dois.
+- **Mudou (público):** `GET /colecoes/:slug/categorias` só traz categorias ativas com pelo menos uma peça visível daquele público. `GET /produtos?categoria=` vale sozinho (o slug é único na tabela) e combina com `colecao` (as duas condições). `CategoriaDestaque` da home perdeu `colecao`.
+- **Mudou (painel, categorias):** `CategoriaAdmin`, `CategoriaCriar` e `CategoriaEditar` não têm mais `colecaoId`/`colecaoSlug`; `GET /admin/categorias` não aceita `?colecaoId`. Slug repetido é 409 `SLUG_EM_USO` na tabela toda.
+- **Mudou (painel, produtos):** `ProdutoCriar` exige `publicos` (`["feminino"]`, `["masculino"]` ou os dois; vazio ou valor fora disso é 400 com `campos.publicos`). `ProdutoEditar` aceita `publicos` e `categoriasIds` (1 a 5; a primeira é a principal). `ProdutoAdminDetalhe` devolve `publicos` no lugar de `colecaoId`. `GET /admin/produtos?colecaoId=` continua (1 = feminino, 2 = masculino). O lote (`categoriaId`) troca só a categoria; não mexe no público.
+- **Revisão (Yupoo):** `POST /admin/revisao` aceita `publicos` (ou `colecao`, como antes) e até 5 `categoriasIds`.
+- **Dados:** a migração fundiu as categorias de mesmo slug (fica a de menor id) e marcou como unissex os produtos que estavam nas duas coleções. Ensaiada numa cópia do banco de dev.
+- **Fechado depois (mesmo dia):** o `upgrade()` recria a FK `produtos.categoria_id -> categorias.id`; o `downgrade()` foi refeito e ensaiado (upgrade, downgrade, upgrade); os scripts de massa foram adaptados. O `alembic check` só aponta divergências antigas de `review_decisions`.
+
+## Cards da home: categoria no lugar de Feminina/Masculina (migração 0016, 30/09/2026)
+
+- **`GET /home`** ganhou `cardsColecao`: lista de `{ lado: "esquerda" | "direita", id, nome, slug, imagemUrl }`, uma por lado ocupado (esquerda = no lugar do card Feminina, direita = Masculina). `imagemUrl` é a imagem do card ou, se não houver, a da categoria. Só entram categorias ativas. Vem na mesma consulta das categorias em destaque (orçamento de 4 consultas mantido).
+- **Painel:** `CategoriaAdmin`, `CategoriaCriar` e `CategoriaEditar` têm `cardHome` (`"esquerda"`, `"direita"` ou `null`) e `cardHomeImagemUrl` (https). Marcar um lado tira a categoria que o ocupava (e apaga a imagem do card dela); `cardHome: null` tira a categoria do card e apaga a imagem do card. Lado fora de esquerda/direita e imagem sem `https://` são 400.
+- **Banco:** `categorias.card_home`, `categorias.card_home_imagem_url`, `ck_categorias_card_home` e o índice único parcial `uq_categorias_card_home` (um por lado).

@@ -91,17 +91,15 @@ def teste_editar_outros_campos_de_produto_em_categoria_escondida_funciona(admin_
     assert resposta.status_code == 200
 
 
-def teste_adicionar_segundo_destino_mantem_a_categoria_escondida_que_ja_estava(admin_logado, sessao):
-    produto, verao, _ = _cenario(sessao)
-    masculino = criar_categoria(sessao, "masculino", "Coleção de verão", "colecao-de-verao")
-    sessao.commit()
+def teste_adicionar_categoria_mantem_a_escondida_que_ja_estava(admin_logado, sessao):
+    produto, verao, bolsas = _cenario(sessao)
     _esconder(admin_logado, verao)
 
     resposta = admin_logado.patch(
-        f"{PRODUTOS}/{produto.id}", json={"categoriasIds": [verao.id, masculino.id]}
+        f"{PRODUTOS}/{produto.id}", json={"categoriasIds": [verao.id, bolsas.id]}
     )
     assert resposta.status_code == 200
-    assert resposta.json()["categoriasIds"] == [verao.id, masculino.id]
+    assert resposta.json()["categoriasIds"] == [verao.id, bolsas.id]
 
 
 def teste_categoria_escondida_nao_recebe_produto_novo(admin_logado, sessao):
@@ -126,15 +124,14 @@ def teste_lote_de_outros_campos_funciona_com_produto_em_categoria_escondida(admi
     assert resposta.status_code == 200
 
 
-def teste_tema_por_colecao_criar_e_atribuir_em_lote(admin_logado, sem_sessao, sessao):
-    """Categoria temática é categoria dentro das coleções existentes (decisão de 30/09/2026)."""
+def teste_tema_e_categoria_comum_criar_e_atribuir_em_lote(admin_logado, sem_sessao, sessao):
+    """Categoria temática é uma categoria como as outras (decisão de 30/09/2026)."""
     marca = criar_marca(sessao, "Marca Tema", "marca-tema")
     base = criar_categoria(sessao, "feminino", "Bolsas", "bolsas")
     produto = criar_produto(sessao, "TEM-001", "Bolsa tema", marca, base, com_imagem=False)
     sessao.commit()
-    colecao_id = base.colecao_id
 
-    criada = admin_logado.post(CATEGORIAS, json={"colecaoId": colecao_id, "nome": "Coleção de verão"})
+    criada = admin_logado.post(CATEGORIAS, json={"nome": "Coleção de verão"})
     assert criada.status_code == 201, criada.text
     assert criada.json()["slug"] == "colecao-de-verao"
     assert criada.json()["ativa"] is True
@@ -143,5 +140,5 @@ def teste_tema_por_colecao_criar_e_atribuir_em_lote(admin_logado, sem_sessao, se
         f"{PRODUTOS}/lote", json={"ids": [produto.id], "categoriaId": criada.json()["id"]}
     )
     assert lote.status_code == 200
-    publico = sem_sessao.get(PUBLICO, params={"colecao": "feminino", "categoria": "colecao-de-verao"})
+    publico = sem_sessao.get(PUBLICO, params={"categoria": "colecao-de-verao"})
     assert [p["id"] for p in publico.json()["dados"]] == [produto.id]

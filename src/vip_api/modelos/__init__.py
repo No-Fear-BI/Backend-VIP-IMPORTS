@@ -14,7 +14,6 @@ from vip_api.modelos.base import Base
 from vip_api.modelos.catalogo import (
     Banner,
     Categoria,
-    Colecao,
     Marca,
     Produto,
     ProdutoImagem,
@@ -35,7 +34,6 @@ __all__ = [
     "Categoria",
     "Cliente",
     "ClienteSessao",
-    "Colecao",
     "Favorito",
     "Marca",
     "Produto",
