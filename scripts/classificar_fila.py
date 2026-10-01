@@ -1,4 +1,5 @@
-"""Classifica a fila de revisão do Yupoo (data/pending-products.json) pelo título do álbum.
+"""Classifica a fila de revisão do Yupoo (data/pending-products.json) pelo título do álbum:
+categoria (`category`) e marca sugerida (`brand`).
 
 Os títulos vêm do fornecedor, em chinês (simplificado ou tradicional), então a regra é por palavra:
 a PRIMEIRA categoria cujo termo aparece no título vence — a ordem de REGRAS importa (calçado e
@@ -9,7 +10,11 @@ e uma categoria que o item já tinha é mantida.
     python scripts/classificar_fila.py            # só mostra o resultado, não grava
     python scripts/classificar_fila.py --gravar   # regrava data/pending-products.json
 
-Só o campo `category` muda; o arquivo é regravado no mesmo formato do importador (2 espaços, LF).
+Marca: o título costuma trazer o nome da marca (às vezes disfarçado, "GU*CCI", "L0UIS VUITT0N") ou o apelido
+em chinês ("古家" = Gucci, "L家" = Louis Vuitton). É só uma SUGESTÃO: a Revisão a deixa pré-selecionada e quem
+aprova confere. Título sem marca reconhecível fica sem `brand`; uma marca já gravada não é sobrescrita.
+
+Só `category` e `brand` mudam; o arquivo é regravado no mesmo formato do importador (2 espaços, LF).
 O arquivo está no git: para desfazer, `git checkout data/pending-products.json`.
 """
 
@@ -75,6 +80,86 @@ _COMPILADAS = [
     for categoria, termos in REGRAS
 ]
 
+# Marca -> apelidos. Os latinos são comparados com o título sem símbolos nem espaços ("GU*CCI" vira "GUCCI") e
+# com 0 no lugar de O; os em chinês casam direto. Só entram os que identificam a marca sem dúvida.
+MARCAS: dict[str, list[str]] = {
+    "Gucci": ["GUCCI", "GUCC", "古家", "古奇", "古驰", "古馳", "小G"],
+    "Louis Vuitton": ["LOUISVUITTON", "LOUISVUTTON", "LOUIVUITTON", "LOUIVUITTO", "LOUISVUITT", "VUITTON", "VUITT", "路易威登", "L家", "LV"],
+    "Dior": ["DIOR", "迪奥", "迪奧", "迪家"],
+    "Off-White": ["OFFWHITE"],
+    "Moncler": ["MONCLER", "MONCL", "蒙口", "盟可睐"],
+    "Burberry": ["BURBERRY", "BURBERR", "BURBER", "巴宝莉", "巴寶莉", "巴宝家"],
+    "Casablanca": ["CASABLANCA", "CASABIANOA", "卡萨布兰卡"],
+    "Hermès": ["HERMES", "爱马仕", "愛馬仕"],
+    "Hellstar": ["HELLSTAR"],
+    "Fendi": ["FENDI", "FEND", "芬迪", "芬家"],
+    "Prada": ["PRADA", "PRAD", "普拉达", "普拉達", "普拉家"],
+    "Balenciaga": ["BALENCIAGA", "BALENCIAG", "BALEN", "巴黎世家", "巴黎世"],
+    "Amiri": ["AMIRI", "AMIR", "AM家"],
+    "Dolce & Gabbana": ["DOLCEGABBANA", "DOLCE", "GABBANA", "杜嘉班纳", "杜嘉班"],
+    "Stone Island": ["STONEISLAND", "石头岛"],
+    "Versace": ["VERSACE", "范思哲"],
+    "Hugo Boss": ["HUGOBOSS", "BOSS"],
+    "Lacoste": ["LACOSTE", "鳄鱼"],
+    "Alexander McQueen": ["MCQUEEN", "MCQUEE", "麦昆", "麥昆"],
+    "Loewe": ["LOEWE", "罗意威", "羅意威"],
+    "Ksubi": ["KSUBI"],
+    "Loro Piana": ["LOROPIANA"],
+    "Balmain": ["BALMAIN"],
+    "Givenchy": ["GIVENCHY", "GIVENC", "纪梵希", "紀梵希"],
+    "Coach": ["COACH", "蔻驰"],
+    "Bally": ["BALLY"],
+    "Supreme": ["SUPREME"],
+    "Saint Laurent": ["SAINTLAURENT", "YSL", "圣罗兰", "聖羅蘭"],
+    "Celine": ["CELINE", "赛琳", "賽琳"],
+    "Valentino": ["VALENTINO", "华伦天奴", "華倫天奴", "华伦家"],
+    "Miu Miu": ["MIUMIU", "缪缪", "谬家", "缪家"],
+    "Jimmy Choo": ["JIMMYCHOO", "吉米周"],
+    "Bottega Veneta": ["BOTTEGA", "葆蝶家"],
+    "Chanel": ["CHANEL", "香奈儿", "香奈兒"],
+    "Ralph Lauren": ["RALPHLAUREN", "拉夫劳伦"],
+    "Philipp Plein": ["PHILIPPPLEIN", "PHILIPP", "PLEIN"],
+    "Gallery Dept": ["GALLERYDEPT"],
+    "Palm Angels": ["PALMANGELS"],
+    "Fear of God": ["FEAROFGOD"],
+    "Nike": ["NIKE", "耐克"],
+    "Adidas": ["ADIDAS", "阿迪达斯", "三叶草"],
+    "Chrome Hearts": ["CHROMEHEARTS", "克罗心"],
+    "Stussy": ["STUSSY"],
+    "Kenzo": ["KENZO"],
+    "Thom Browne": ["THOMBROWNE"],
+    "Arc'teryx": ["ARCTERYX", "始祖鸟"],
+    "The North Face": ["THENORTHFACE", "北面"],
+    "Canada Goose": ["CANADAGOOSE", "大鹅"],
+    "Tom Ford": ["TOMFORD"],
+    "Rolex": ["ROLEX", "劳力士"],
+    "Cartier": ["CARTIER", "卡地亚"],
+}
+# Marcas curtas que só valem como palavra solta no título original ("LV 3413"), nunca no meio de outra palavra.
+PALAVRA_SOLTA = {"LV", "YSL", "BOSS"}
+
+_APELIDOS = sorted(((m, a) for m, aliases in MARCAS.items() for a in aliases), key=lambda par: -len(par[1]))
+
+
+def marca_sugerida(nome: str) -> str | None:
+    solto = nome.upper()
+    colado = re.sub(r"[^A-Za-z0-9一-鿿]+", "", nome).upper().replace("0", "O")
+    for marca, apelido in _APELIDOS:
+        if apelido in PALAVRA_SOLTA:
+            if re.search(rf"(?<![A-Z]){apelido}(?![A-Z])", solto):
+                return marca
+        elif apelido[0].isascii() and not apelido.isascii():
+            # "L家", "AM家": não podem vir colados a outra letra ("AL家" é outra marca).
+            if re.search(rf"(?<![A-Z]){re.escape(apelido)}", colado):
+                return marca
+        elif apelido.isascii() and len(apelido) <= 5:
+            # Curtos ("FEND", "COACH"): não podem ser o começo de outra palavra ("DEFENDER", "COACHELLA").
+            if re.search(rf"{re.escape(apelido)}(?![A-Z])", colado):
+                return marca
+        elif apelido in colado:
+            return marca
+    return None
+
 
 def classificar(nome: str) -> str | None:
     texto = nome.lower()
@@ -97,7 +182,16 @@ def main() -> None:
     trocas: Counter[tuple[str, str]] = Counter()
     exemplos: dict[str, list[str]] = defaultdict(list)
 
+    marcas: Counter[str] = Counter()
+    exemplos_marca: dict[str, list[str]] = defaultdict(list)
+
     for produto in produtos:
+        marca = marca_sugerida(produto["name"])
+        if marca and not produto.get("brand"):
+            produto["brand"] = marca
+        if produto.get("brand"):
+            marcas[produto["brand"]] += 1
+            exemplos_marca[produto["brand"]].append(produto["name"][:60])
         nova = classificar(produto["name"])
         if nova is None or nova == produto["category"]:
             continue
@@ -116,6 +210,9 @@ def main() -> None:
         if de != SEM_CATEGORIA:
             print(f"  {de} -> {para}: {quantidade}")
     random.seed(1)
+    print(f"\nMarca sugerida em {sum(marcas.values())} de {len(produtos)} produtos:")
+    for marca, quantidade in marcas.most_common():
+        print(f"  {marca:20} {quantidade:6}   ex.: {random.choice(exemplos_marca[marca])}")
     print("\nAmostras:")
     for categoria, nomes in exemplos.items():
         print(f"  {categoria}")

@@ -1,5 +1,6 @@
-﻿import { readFile, writeFile, rename, copyFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+﻿import { spawnSync } from 'node:child_process';
+import { readFile, writeFile, rename, copyFile } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const fornecedores = [
   { id: 'qwer888', base: 'https://1234qwer888.x.yupoo.com', caminho: '/categories' },
@@ -39,7 +40,10 @@ async function baixar(fornecedor, pagina) {
 }
 export function mesclar(anteriores, coletados) {
   const mapa = new Map(anteriores.map(p => [p.id, p]));
-  for (const p of coletados) mapa.set(p.id, { ...p, category: mapa.get(p.id)?.category || p.category });
+  for (const p of coletados) {
+    const anterior = mapa.get(p.id);
+    mapa.set(p.id, { ...p, category: anterior?.category || p.category, ...(anterior?.brand ? { brand: anterior.brand } : {}) });
+  }
   return [...mapa.values()];
 }
 async function main() {
@@ -86,5 +90,9 @@ async function main() {
   await rename(temporario, arquivo);
   await writeFile(new URL('../data/sync-yupoo-report.json', import.meta.url), JSON.stringify(relatorio, null, 2) + '\n');
   console.log(JSON.stringify(relatorio, null, 2));
+  // Categoria e marca sugerida pelo título dos itens novos (scripts/classificar_fila.py). Se o Python não
+  // estiver à mão, a fila já foi gravada: só avisa, e o comando pode ser rodado depois.
+  const classificacao = spawnSync('python', [fileURLToPath(new URL('./classificar_fila.py', import.meta.url)), '--gravar'], { stdio: 'inherit' });
+  if (classificacao.status !== 0) console.warn('Aviso: não consegui classificar a fila. Rode: python scripts/classificar_fila.py --gravar');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(erro => { console.error(erro); process.exitCode = 1; });

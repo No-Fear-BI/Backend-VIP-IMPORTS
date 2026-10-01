@@ -37,3 +37,8 @@ test('lê listagem sem total de álbuns e categoria de uma página', () => {
   assert.deepEqual(totais('in total 79 pages'), { albuns: null, paginas: 79 });
   assert.deepEqual(totais('in total 115 albums <span class="categories__box-right-pagination-span">1 / 1</span>'), { albuns: 115, paginas: 1 });
 });
+test('reimportação preserva a marca sugerida já gravada', () => {
+  const novos = extrair(html);
+  const anteriores = [{ id: novos[0].id, category: 'Camisas', brand: 'Gucci' }];
+  assert.equal(mesclar(anteriores, novos)[0].brand, 'Gucci');
+});
