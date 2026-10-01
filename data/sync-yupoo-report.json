@@ -1,21 +1,107 @@
 {
-  "concluidoEm": "2026-09-21T20:03:22.822Z",
+  "concluidoEm": "2026-10-01T18:01:35.369Z",
   "fornecedores": [
     {
-      "fornecedor": "qwer888",
-      "paginas": 105,
-      "informado": 12557,
-      "coletados": 12557
+      "fornecedor": "gz30038",
+      "origem": "https://gz30038.x.yupoo.com/categories/4257236",
+      "paginas": 2,
+      "informado": 224,
+      "coletados": 224
+    },
+    {
+      "fornecedor": "lvshop88",
+      "origem": "https://lvshop88.x.yupoo.com/categories/3175810",
+      "paginas": 10,
+      "informado": 1085,
+      "coletados": 1085
+    },
+    {
+      "fornecedor": "jingdongshangcheng",
+      "origem": "https://jingdongshangcheng.x.yupoo.com/albums/",
+      "paginas": 79,
+      "informado": null,
+      "coletados": 9469
+    },
+    {
+      "fornecedor": "makeawishlove",
+      "origem": "https://makeawishlove.x.yupoo.com/categories/3589423",
+      "paginas": 19,
+      "informado": 2244,
+      "coletados": 2244
+    },
+    {
+      "fornecedor": "jyxzfz",
+      "origem": "https://jyxzfz.x.yupoo.com/categories/3709412",
+      "paginas": 4,
+      "informado": 452,
+      "coletados": 452
+    },
+    {
+      "fornecedor": "jyxzfz",
+      "origem": "https://jyxzfz.x.yupoo.com/categories/2986404",
+      "paginas": 18,
+      "informado": 2051,
+      "coletados": 2051
     },
     {
       "fornecedor": "jypj",
+      "origem": "https://jypj.x.yupoo.com/categories/4836989",
       "paginas": 8,
-      "informado": 917,
-      "coletados": 917
+      "informado": 955,
+      "coletados": 955
+    },
+    {
+      "fornecedor": "he1994611",
+      "origem": "https://he1994611.x.yupoo.com/categories/641819",
+      "paginas": 7,
+      "informado": 835,
+      "coletados": 835
+    },
+    {
+      "fornecedor": "bailiyundong",
+      "origem": "https://bailiyundong.x.yupoo.com/albums/",
+      "paginas": 31,
+      "informado": null,
+      "coletados": 3665
+    },
+    {
+      "fornecedor": "nulixieye",
+      "origem": "https://nulixieye.x.yupoo.com/categories/3105478",
+      "paginas": 1,
+      "informado": 115,
+      "coletados": 115
+    },
+    {
+      "fornecedor": "nulixieye",
+      "origem": "https://nulixieye.x.yupoo.com/categories/3085242",
+      "paginas": 5,
+      "informado": 545,
+      "coletados": 545
+    },
+    {
+      "fornecedor": "ghxy",
+      "origem": "https://ghxy.x.yupoo.com/categories/2787976",
+      "paginas": 3,
+      "informado": 288,
+      "coletados": 288
+    },
+    {
+      "fornecedor": "he1994611",
+      "origem": "https://he1994611.x.yupoo.com/collections/642688",
+      "paginas": 2,
+      "informado": 199,
+      "coletados": 199
+    },
+    {
+      "fornecedor": "nulixieye",
+      "origem": "https://nulixieye.x.yupoo.com/categories/3105258",
+      "paginas": 5,
+      "informado": 530,
+      "coletados": 530
     }
   ],
-  "coletados": 13474,
-  "anteriores": 12647,
-  "adicionados": 917,
-  "total": 13564
+  "coletados": 22383,
+  "anteriores": 13564,
+  "adicionados": 21466,
+  "total": 35030
 }
