@@ -138,6 +138,131 @@ def teste_aprovar_de_novo_atualiza_em_vez_de_duplicar(admin_logado, sessao, fila
     assert produtos[0].nome == "Jaqueta bomber revisada"
 
 
+ORIGINAIS = [f"https://photo.yupoo.com/1234qwer888/hash{i}/foto{i}.jpg" for i in range(1, 5)]
+
+
+def teste_fotos_lista_as_fotos_do_album_com_miniatura(admin_logado, fila_de_teste, monkeypatch):
+    monkeypatch.setattr(admin_revisao, "_fotos_do_album", lambda source: ORIGINAIS)
+
+    resposta = admin_logado.get(f"{ROTA}/fotos", params={"produtoId": ALBUM_TESTE["id"]})
+
+    assert resposta.status_code == 200
+    fotos = resposta.json()["fotos"]
+    assert [f["url"] for f in fotos] == ORIGINAIS
+    assert fotos[0]["miniatura"] == "https://photo.yupoo.com/1234qwer888/hash1/medium.jpg"
+
+
+def teste_fotos_de_produto_inexistente_e_404(admin_logado, fila_de_teste):
+    resposta = admin_logado.get(f"{ROTA}/fotos", params={"produtoId": "nao-existe"})
+
+    assert resposta.status_code == 404
+
+
+def teste_fotos_do_album_le_data_origin_src_com_uid(monkeypatch):
+    pedidos = []
+
+    class Resposta:
+        def __init__(self, texto):
+            self.texto = texto.encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limite):
+            return self.texto
+
+    pagina = (
+        '<img data-origin-src="https://photo.yupoo.com/u/a/1.jpg">'
+        '<img data-origin-src="//photo.yupoo.com/u/b/2.jpg">'
+        '<img data-origin-src="https://photo.yupoo.com/u/a/1.jpg">'
+        '<img data-origin-src="https://outro.com/x.jpg">'
+    )
+    monkeypatch.setattr(admin_revisao, "_albuns", {})
+    monkeypatch.setattr(
+        admin_revisao, "urlopen", lambda req, timeout: pedidos.append(req.full_url) or Resposta(pagina)
+    )
+
+    fotos = admin_revisao._fotos_do_album("https://u.x.yupoo.com/albums/1?referrercate=9")
+
+    assert fotos == ["https://photo.yupoo.com/u/a/1.jpg", "https://photo.yupoo.com/u/b/2.jpg"]
+    assert pedidos == ["https://u.x.yupoo.com/albums/1?uid=1"]
+
+
+def teste_aprovar_com_fotos_escolhidas_usa_a_ordem_e_a_primeira_e_capa(admin_logado, sessao, fila_de_teste, monkeypatch):
+    baixadas = []
+    monkeypatch.setattr(
+        admin_revisao, "_baixar_foto_yupoo", lambda url, source: baixadas.append(url) or _imagem_fake()
+    )
+    escolhidas = [ORIGINAIS[2], ORIGINAIS[0], ORIGINAIS[3]]
+
+    resposta = admin_logado.post(
+        ROTA,
+        json={
+            "productId": ALBUM_TESTE["id"],
+            "status": "approved",
+            "marca": "Nike Teste",
+            "colecao": "feminino",
+            "fotos": escolhidas,
+        },
+    )
+
+    assert resposta.status_code == 200
+    assert baixadas == escolhidas
+    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"]))
+    assert [i.ordem for i in produto.imagens] == [1, 2, 3]
+    assert [i.capa for i in produto.imagens] == [True, False, False]
+    assert sessao.get(DecisaoRevisao, ALBUM_TESTE["id"]).image == ORIGINAIS[2]
+
+
+def teste_aprovar_sem_fotos_mantem_so_a_capa_do_album(admin_logado, sessao, fila_de_teste):
+    admin_logado.post(
+        ROTA,
+        json={"productId": ALBUM_TESTE["id"], "status": "approved", "marca": "Nike Teste", "colecao": "feminino"},
+    )
+
+    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"]))
+    assert len(produto.imagens) == 1
+
+
+def teste_foto_que_falha_nao_cria_produto(admin_logado, sessao, fila_de_teste, monkeypatch):
+    def baixar(url, source):
+        if url == ORIGINAIS[1]:
+            raise admin_revisao.AppError("IMAGEM_INDISPONIVEL", "Imagem indisponível.", 502)
+        return _imagem_fake()
+
+    monkeypatch.setattr(admin_revisao, "_baixar_foto_yupoo", baixar)
+
+    resposta = admin_logado.post(
+        ROTA,
+        json={
+            "productId": ALBUM_TESTE["id"],
+            "status": "approved",
+            "marca": "Nike Teste",
+            "colecao": "feminino",
+            "fotos": ORIGINAIS[:3],
+        },
+    )
+
+    assert resposta.status_code == 502
+    assert sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"])) is None
+    assert sessao.get(DecisaoRevisao, ALBUM_TESTE["id"]) is None
+
+
+def teste_publicados_informa_produto_e_estado_das_imagens(admin_logado, fila_de_teste):
+    admin_logado.post(
+        ROTA,
+        json={"productId": ALBUM_TESTE["id"], "status": "approved", "marca": "Nike Teste", "colecao": "feminino"},
+    )
+
+    item = admin_logado.get(f"{ROTA}/publicados").json()[0]
+
+    assert item["imagensEstado"] == "concluido"
+    assert item["produtoId"]
+
+
 def teste_rejeitar_nao_cria_produto(admin_logado, sessao, fila_de_teste):
     resposta = admin_logado.post(ROTA, json={"productId": ALBUM_TESTE["id"], "status": "rejected"})
 

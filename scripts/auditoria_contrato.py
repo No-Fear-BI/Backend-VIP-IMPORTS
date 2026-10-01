@@ -67,6 +67,7 @@ FORA_DO_CONTRATO = {
     # Fila de revisão da importação completa do Yupoo (commit c948995).
     ("GET", "/admin/revisao/pendentes"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("GET", "/admin/revisao/publicados"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/revisao/fotos"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("GET", "/admin/revisao/imagem"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("POST", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("DELETE", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
