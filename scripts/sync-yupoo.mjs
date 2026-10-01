@@ -9,7 +9,7 @@ const arquivo = new URL('../data/pending-products.json', import.meta.url);
 export const decodificar = (texto) => texto.replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replaceAll('&quot;', '"').replaceAll('&apos;', "'").replaceAll('&amp;', '&').replaceAll('&nbsp;', ' ');
 export function extrair(html, fornecedor = fornecedores[0]) {
   const itens = [];
-  const padrao = /href="\/albums\/(\d+)[^"]*"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?album__title">([\s\S]*?)<\/div>/g;
+  const padrao = /href="\/albums\/(\d+)[^"]*"[^>]*>(?:(?!href="\/albums\/)[\s\S])*?<img\b[^>]*?\s(?:data-src|src)="(https?:\/\/[^\"]+)"[\s\S]*?album(?:3)?__title">([\s\S]*?)<\/div>/g;
   for (const m of html.matchAll(padrao)) {
     const nome = decodificar(m[3].replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
     if (!nome) throw new Error(`Álbum ${m[1]} sem título`);
@@ -19,9 +19,9 @@ export function extrair(html, fornecedor = fornecedores[0]) {
 }
 export function totais(html) {
   const albuns = /in total\s+(\d+)\s+albums/i.exec(html);
-  const paginas = /in total\s+(\d+)\s+pages/i.exec(html);
-  if (!albuns || !paginas) throw new Error('Página sem totais reconhecidos; importação cancelada.');
-  return { albuns: Number(albuns[1]), paginas: Number(paginas[1]) };
+  const paginas = /in total\s+(\d+)\s+pages/i.exec(html) || /categories__box-right-pagination-span">\s*\d+\s*\/\s*(\d+)/.exec(html);
+  if (!paginas) throw new Error('Página sem totais reconhecidos; importação cancelada.');
+  return { albuns: albuns ? Number(albuns[1]) : null, paginas: Number(paginas[1]) };
 }
 async function baixar(fornecedor, pagina) {
   let erro;
@@ -43,13 +43,19 @@ export function mesclar(anteriores, coletados) {
   return [...mapa.values()];
 }
 async function main() {
+  const fontes = process.argv[2] ? [...new Set(JSON.parse(await readFile(process.argv[2], 'utf8')))].map(link => {
+    const url = new URL(link);
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.x.yupoo.com')) throw new Error('Fornecedor inválido');
+    return { id: url.hostname.split('.')[0], base: url.origin, caminho: url.pathname };
+  }) : fornecedores;
   const anteriores = JSON.parse(await readFile(arquivo, 'utf8'));
   const coletados = [];
   const relatoriosFornecedores = [];
-  for (const fornecedor of fornecedores) {
+  for (const fornecedor of fontes) {
     const primeira = await baixar(fornecedor, 1);
     const esperado = totais(primeira);
     const paginas = [extrair(primeira, fornecedor)];
+    if (!paginas[0].length && esperado.albuns !== 0) throw new Error(`Nenhum álbum reconhecido: ${fornecedor.base}${fornecedor.caminho}`);
     console.log(`${fornecedor.id}: ${esperado.albuns ?? 'álbuns não informado'} álbuns, ${esperado.paginas} páginas.`);
     let proxima = 2;
     await Promise.all(Array.from({ length: 3 }, async () => {
@@ -69,7 +75,7 @@ async function main() {
     const unicosFornecedor = new Set(itens.map(p => p.id));
     if ((esperado.albuns && unicosFornecedor.size !== esperado.albuns) || unicosFornecedor.size !== itens.length) throw new Error(`Coleta inconsistente para ${fornecedor.id}; arquivo anterior preservado.`);
     coletados.push(...itens);
-    relatoriosFornecedores.push({ fornecedor: fornecedor.id, paginas: esperado.paginas, informado: esperado.albuns ?? null, coletados: unicosFornecedor.size });
+    relatoriosFornecedores.push({ fornecedor: fornecedor.id, origem: `${fornecedor.base}${fornecedor.caminho}`, paginas: esperado.paginas, informado: esperado.albuns ?? null, coletados: unicosFornecedor.size });
   }
   const unicos = new Set(coletados.map(p => p.id));
   const produtos = mesclar(anteriores, coletados);

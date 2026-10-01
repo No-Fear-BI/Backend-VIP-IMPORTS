@@ -24,3 +24,16 @@ test('reimportação não duplica e preserva categorias e outros fornecedores', 
   assert.deepEqual(resultado[1], anteriores[1]);
   assert.deepEqual(resultado[2], anteriores[2]);
 });
+
+test('lê imagens src e cartões album3 sem misturar álbuns', () => {
+  const pagina = '<a href="/albums/1"><img src="https://photo.yupoo.com/a/medium.jpg"><div class="album__title">Primeiro</div></a>' +
+    '<a href="/albums/2"><img data-src="https://photo.yupoo.com/b/small.jpg"><div class="album3__title">Segundo</div></a>';
+  const itens = extrair(pagina, { id: 'loja', base: 'https://loja.x.yupoo.com' });
+  assert.deepEqual(itens.map(p => [p.id, p.name]), [['loja-1', 'Primeiro'], ['loja-2', 'Segundo']]);
+  assert.equal(itens[1].image, 'https://photo.yupoo.com/b/medium.jpg');
+});
+
+test('lê listagem sem total de álbuns e categoria de uma página', () => {
+  assert.deepEqual(totais('in total 79 pages'), { albuns: null, paginas: 79 });
+  assert.deepEqual(totais('in total 115 albums <span class="categories__box-right-pagination-span">1 / 1</span>'), { albuns: 115, paginas: 1 });
+});
