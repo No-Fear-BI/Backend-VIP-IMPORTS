@@ -30,8 +30,10 @@ def teste_marca_sugerida(titulo, marca):
 
 
 def teste_apelido_de_outra_marca_nao_vira_louis_vuitton():
-    # "AL家" é outra marca; "L家" só vale quando não vem colado a uma letra.
-    assert classificar_fila.marca_sugerida("2025新款AL家35-42") is None
+    # "AL家" é Alaïa, não Louis Vuitton: "L家" só vale quando não vem colado a uma letra.
+    assert classificar_fila.marca_sugerida("2025新款AL家35-42") == "Alaïa"
+    assert classificar_fila.marca_sugerida("2025新款R家35-40") == "Roger Vivier"
+    assert classificar_fila.marca_sugerida("2025新款GR家35-42") == "Gianvito Rossi"
 
 
 def teste_sigla_curta_so_vale_como_palavra_solta():
