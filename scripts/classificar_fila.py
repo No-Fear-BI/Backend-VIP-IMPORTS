@@ -14,6 +14,8 @@ Marca: o título costuma trazer o nome da marca (às vezes disfarçado, "GU*CCI"
 em chinês ("古家" = Gucci, "L家" = Louis Vuitton). É só uma SUGESTÃO: a Revisão a deixa pré-selecionada e quem
 aprova confere. Título sem marca reconhecível fica sem `brand`; uma marca já gravada não é sobrescrita.
 
+Quando o título não traz a marca, vale a de `data/marcas-por-foto.json` (id -> marca, conferida olhando a foto do produto).
+
 Só `category` e `brand` mudam; o arquivo é regravado no mesmo formato do importador (2 espaços, LF).
 O arquivo está no git: para desfazer, `git checkout data/pending-products.json`.
 """
@@ -27,6 +29,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ARQUIVO = Path(__file__).resolve().parents[1] / "data" / "pending-products.json"
+# Marca descoberta olhando a foto do produto (id do álbum -> marca), para os títulos que não dizem a marca.
+MARCAS_POR_FOTO = Path(__file__).resolve().parents[1] / "data" / "marcas-por-foto.json"
 SEM_CATEGORIA = "A classificar"
 
 # Termos em letras latinas casam só como palavra inteira (senão "bag" pegaria "baggy"); os em
@@ -185,8 +189,10 @@ def main() -> None:
     marcas: Counter[str] = Counter()
     exemplos_marca: dict[str, list[str]] = defaultdict(list)
 
+    por_foto = json.loads(MARCAS_POR_FOTO.read_text(encoding="utf-8")) if MARCAS_POR_FOTO.exists() else {}
+
     for produto in produtos:
-        marca = marca_sugerida(produto["name"])
+        marca = marca_sugerida(produto["name"]) or por_foto.get(produto["id"])
         if marca and not produto.get("brand"):
             produto["brand"] = marca
         if produto.get("brand"):
