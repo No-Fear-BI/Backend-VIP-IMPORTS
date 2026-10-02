@@ -42,6 +42,7 @@ from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos
 from vip_api.texto import gerar_slug
 from vip_api.servicos.imagens_processamento import abrir_imagem
 from vip_api.servicos.importacao_catalogo import importar_produto
+from vip_api.servicos import atualizacao_fila
 
 roteador = APIRouter(prefix='/revisao', tags=['admin'])
 _arquivo = Path(__file__).resolve().parents[3] / 'data' / 'pending-products.json'
@@ -148,6 +149,16 @@ def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por
     paginas=max(1,(len(filtrados)+por_pagina-1)//por_pagina)
     pagina=min(pagina,paginas); inicio=(pagina-1)*por_pagina
     return {'items':[dict(p, **traduzir(p)) for p in filtrados[inicio:inicio+por_pagina]],'total':len(filtrados),'categories':sorted({p['category'] for p in fila}),'pagina':pagina,'paginas':paginas,'porPagina':por_pagina}
+
+@roteador.post('/atualizar')
+def atualizar_fila():
+    """Puxa os álbuns novos do Yupoo para a fila (botão "Atualizar produtos"). Roda em segundo plano;
+    se já houver uma coleta, só devolve o andamento. Não repete álbum: o script junta pelo id."""
+    return atualizacao_fila.iniciar()
+
+@roteador.get('/atualizacao')
+def andamento_da_atualizacao():
+    return atualizacao_fila.estado()
 
 @roteador.get('/fotos')
 def fotos(produto_id: str = Query(alias='produtoId')):

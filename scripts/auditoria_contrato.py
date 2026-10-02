@@ -71,6 +71,8 @@ FORA_DO_CONTRATO = {
     ("GET", "/admin/revisao/imagem"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("POST", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("DELETE", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/revisao/atualizar"): "botão Atualizar produtos (coleta do Yupoo); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/revisao/atualizacao"): "andamento da coleta do Yupoo; registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do

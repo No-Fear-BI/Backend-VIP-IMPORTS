@@ -5,8 +5,10 @@ WORKDIR /app
 # libpq5: biblioteca cliente do PostgreSQL que o psycopg[binary] usa em
 # tempo de execução (o wheel binário já traz o essencial, mas a lib do
 # sistema evita surpresa de imagem para imagem).
+# nodejs: o botão "Atualizar produtos" da Revisão roda scripts/sync-yupoo.mjs
+# (servicos/atualizacao_fila.py); precisa de fetch nativo, que o Node 18+ tem.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 \
+    && apt-get install -y --no-install-recommends libpq5 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./

@@ -79,9 +79,12 @@ services:
       # foto que o cliente subiu pelo painel, nao so a que a importacao em
       # lote gerou (essa o CSV original ainda tem).
       - imagens_painel:/app/dados/imagens
-      # A fotografia dos fornecedores é somente leitura: decisões vivem no PostgreSQL,
-      # nunca no JSON atualizado pelo importador.
-      - ./data:/app/data:ro
+      # A fila de revisão (data/pending-products.json) é regravada pelo botão
+      # "Atualizar produtos" (scripts/sync-yupoo.mjs), então a pasta é gravável.
+      # As DECISÕES continuam só no PostgreSQL, nunca neste JSON.
+      - ./data:/app/data
+      # O script da coleta vem do host (a imagem guarda uma cópia que envelhece).
+      - ./scripts:/app/scripts:ro
     command: ["uvicorn", "vip_api.principal:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       banco:

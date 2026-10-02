@@ -10,3 +10,5 @@ __pycache__/
 data/pending-products.backup.json
 data/pending-products.tmp.json
 data/yupoo-categories.html
+data/sync-yupoo.lock
+data/sync-yupoo-estado.json

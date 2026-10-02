@@ -292,3 +292,14 @@ A tabela `colecoes` deixou de existir. Feminino e Masculino são o **público** 
 ## Link de origem do produto (02/10/2026)
 
 `produtos.origem_url` já existia e a revisão já o preenchia ao aprovar (com o link do álbum). Agora o painel o enxerga: `GET /admin/produtos/{id}` devolve `origemUrl` (ou `null`), `POST /admin/produtos` e `PATCH /admin/produtos/{id}` aceitam `origemUrl`. Só http/https sem espaço (senão 400 em `campos.origemUrl`); no PATCH, `""` ou `null` apaga e a ausência do campo não mexe. O backend só guarda o texto, nunca abre o link. Sem migração. A listagem (`GET /admin/produtos`) também traz `origemUrl` em cada linha (o painel mostra "Ver origem" ao lado das ações). Duplicar produto não copia o link.
+
+## Atualizar produtos da Yupoo pela Revisão (02/10/2026)
+
+Dois endpoints do painel (sessão de admin) para o botão **Atualizar produtos**:
+
+- `POST /admin/revisao/atualizar` — começa a coleta e responde na hora com o andamento. Roda `scripts/sync-yupoo.mjs data/fornecedores-adicionais.json --padrao` (os fornecedores do arquivo **mais** os embutidos, como o qwer888, que não está no arquivo). Se já houver uma coleta rodando (inclusive em outro processo), não começa outra: devolve o andamento da que está em curso.
+- `GET /admin/revisao/atualizacao` — andamento: `estado` (`ocioso` | `rodando` | `concluido` | `falhou`), `iniciadoEm`, `concluidoEm`; em `concluido`, `adicionados` (álbuns novos na fila), `coletados` e `total`; em `falhou`, `erro` (texto para mostrar). A tela consulta de poucos em poucos segundos enquanto `rodando`; a coleta leva vários minutos.
+
+**Sem repetidos:** o script junta os álbuns pelo id (`fornecedor-idDoÁlbum`), então reexecutar não duplica, e `GET /admin/revisao/pendentes` já esconde o que foi aprovado ou reprovado (decisões no PostgreSQL). Quem vem do arquivo e já estava na fila mantém a categoria e a marca sugerida.
+
+O estado fica em `data/sync-yupoo-estado.json` e a trava em `data/sync-yupoo.lock` (os dois fora do git). Uma falha de rede preserva a fila anterior. **Infra:** a imagem da API agora tem Node (`Dockerfile`) e `./data` não é mais somente leitura no compose; em produção é preciso reconstruir a imagem e deixar `data/` gravável.

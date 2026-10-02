@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extrair, totais, mesclar, decodificar } from './sync-yupoo.mjs';
+import { extrair, totais, mesclar, decodificar, montarFontes } from './sync-yupoo.mjs';
 const html = '<a class="album__main" href="/albums/123?uid=1"><img data-src="https://photo.yupoo.com/test/small.jpg"></a><div class="text_overflow album__title">Gucci &amp; Nike &#x3D; &#39;teste&#39;</div>';
 test('importa todos os títulos, inclusive marcas, com imagem e ID estável', () => {
   const [item] = extrair(html);
@@ -42,3 +42,12 @@ test('reimportação preserva a marca sugerida já gravada', () => {
   const anteriores = [{ id: novos[0].id, category: 'Camisas', brand: 'Gucci' }];
   assert.equal(mesclar(anteriores, novos)[0].brand, 'Gucci');
 });
+
+test('--padrao soma o qwer888 sem repetir fornecedor que o arquivo já cobre', () => {
+  const links = ['https://gz30038.x.yupoo.com/categories/1', 'https://jypj.x.yupoo.com/categories/4836989'];
+  assert.deepEqual(montarFontes(links).map(f => f.id), ['gz30038', 'jypj']);
+  assert.deepEqual(montarFontes(links, true).map(f => f.id), ['gz30038', 'jypj', 'qwer888']);
+  assert.deepEqual(montarFontes(null).map(f => f.id), ['qwer888', 'jypj']);
+  assert.throws(() => montarFontes(['https://exemplo.com/a']));
+});
+

@@ -46,12 +46,24 @@ export function mesclar(anteriores, coletados) {
   }
   return [...mapa.values()];
 }
-async function main() {
-  const fontes = process.argv[2] ? [...new Set(JSON.parse(await readFile(process.argv[2], 'utf8')))].map(link => {
+// Fontes da coleta. Sem arquivo: só os fornecedores embutidos. Com arquivo: os links dele e, com
+// `incluirPadrao`, também os embutidos que o arquivo não cobre (o qwer888 não está no arquivo, e
+// listá-lo por link daria o id `1234qwer888-…`, que repetiria todos os álbuns já na fila).
+export function montarFontes(links, incluirPadrao = false) {
+  if (!links) return fornecedores;
+  const doArquivo = [...new Set(links)].map(link => {
     const url = new URL(link);
     if (url.protocol !== 'https:' || !url.hostname.endsWith('.x.yupoo.com')) throw new Error('Fornecedor inválido');
     return { id: url.hostname.split('.')[0], base: url.origin, caminho: url.pathname };
-  }) : fornecedores;
+  });
+  if (!incluirPadrao) return doArquivo;
+  const jaCobertos = new Set(doArquivo.map(f => f.id));
+  return [...doArquivo, ...fornecedores.filter(f => !jaCobertos.has(f.id))];
+}
+async function main() {
+  const argumentos = process.argv.slice(2);
+  const caminhoLista = argumentos.find(a => !a.startsWith('--'));
+  const fontes = montarFontes(caminhoLista ? JSON.parse(await readFile(caminhoLista, 'utf8')) : null, argumentos.includes('--padrao'));
   const anteriores = JSON.parse(await readFile(arquivo, 'utf8'));
   const coletados = [];
   const relatoriosFornecedores = [];

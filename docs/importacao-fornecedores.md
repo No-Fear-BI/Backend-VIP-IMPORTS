@@ -25,3 +25,10 @@ A fila fica em `data/pending-products.json`, com cópia anterior em
 `data/pending-products.backup.json`. O resultado por origem e as contagens
 ficam em `data/sync-yupoo-report.json`. A API detecta a atualização do arquivo
 sem precisar reiniciar.
+
+## Pelo painel
+
+O botão **Atualizar produtos**, na Revisão do painel, roda o mesmo script com `--padrao`:
+os links deste arquivo mais os fornecedores embutidos (o qwer888 não está aqui; listá-lo
+por link geraria o id `1234qwer888-…` e repetiria todos os álbuns). Ver
+`docs/para-o-frontend.md`, seção "Atualizar produtos da Yupoo pela Revisão".
