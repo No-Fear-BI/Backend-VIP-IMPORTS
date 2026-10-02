@@ -288,3 +288,7 @@ A tabela `colecoes` deixou de existir. Feminino e Masculino são o **público** 
 - **`GET /home`** ganhou `cardsColecao`: lista de `{ lado: "esquerda" | "direita", id, nome, slug, imagemUrl }`, uma por lado ocupado (esquerda = no lugar do card Feminina, direita = Masculina). `imagemUrl` é a imagem do card ou, se não houver, a da categoria. Só entram categorias ativas. Vem na mesma consulta das categorias em destaque (orçamento de 4 consultas mantido).
 - **Painel:** `CategoriaAdmin`, `CategoriaCriar` e `CategoriaEditar` têm `cardHome` (`"esquerda"`, `"direita"` ou `null`) e `cardHomeImagemUrl` (https). Marcar um lado tira a categoria que o ocupava (e apaga a imagem do card dela); `cardHome: null` tira a categoria do card e apaga a imagem do card. Lado fora de esquerda/direita e imagem sem `https://` são 400.
 - **Banco:** `categorias.card_home`, `categorias.card_home_imagem_url`, `ck_categorias_card_home` e o índice único parcial `uq_categorias_card_home` (um por lado).
+
+## Link de origem do produto (02/10/2026)
+
+`produtos.origem_url` já existia e a revisão já o preenchia ao aprovar (com o link do álbum). Agora o painel o enxerga: `GET /admin/produtos/{id}` devolve `origemUrl` (ou `null`), `POST /admin/produtos` e `PATCH /admin/produtos/{id}` aceitam `origemUrl`. Só http/https sem espaço (senão 400 em `campos.origemUrl`); no PATCH, `""` ou `null` apaga e a ausência do campo não mexe. O backend só guarda o texto, nunca abre o link. Sem migração. A listagem (`GET /admin/produtos`) não traz o campo. Duplicar produto não copia o link.

@@ -138,6 +138,60 @@ def teste_editar_muda_so_o_que_veio(admin_logado, sessao, marca_e_categoria):
     assert corpo["codigo"] == "CHN-0200"
 
 
+def teste_origem_url_entra_na_criacao_e_volta_no_detalhe(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    link = "https://exemplo.x.yupoo.com/albums/123?uid=1"
+
+    criado = admin_logado.post(
+        ROTA,
+        json={"nome": "Bolsa com Origem", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"], "origemUrl": f"  {link}  "},
+    )
+
+    assert criado.status_code == 201
+    assert criado.json()["origemUrl"] == link
+    assert admin_logado.get(f"{ROTA}/{criado.json()['id']}").json()["origemUrl"] == link
+
+
+def teste_origem_url_e_opcional_e_vem_nula(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+
+    criado = admin_logado.post(
+        ROTA, json={"nome": "Sem Origem", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"]}
+    )
+
+    assert criado.status_code == 201
+    assert criado.json()["origemUrl"] is None
+
+
+@pytest.mark.parametrize("invalido", ["yupoo.com/album", "ftp://x.com/a", "https://com espaco.com", "javascript:alert(1)"])
+def teste_origem_url_que_nao_e_link_http_responde_400(admin_logado, marca_e_categoria, invalido):
+    marca, categoria = marca_e_categoria
+
+    resposta = admin_logado.post(
+        ROTA,
+        json={"nome": "Link Ruim", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"], "origemUrl": invalido},
+    )
+
+    assert resposta.status_code in (400, 422)
+    assert "origemUrl" in str(resposta.json())
+
+
+def teste_editar_origem_url_muda_e_apaga(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    criado = admin_logado.post(
+        ROTA, json={"nome": "Editar Origem", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"]}
+    ).json()
+
+    mudou = admin_logado.patch(f"{ROTA}/{criado['id']}", json={"origemUrl": "https://exemplo.com/a"})
+    # Outro campo no corpo não pode apagar o link: ausência é "não mexer".
+    intacto = admin_logado.patch(f"{ROTA}/{criado['id']}", json={"nome": "Editar Origem 2"})
+    apagou = admin_logado.patch(f"{ROTA}/{criado['id']}", json={"origemUrl": ""})
+
+    assert mudou.json()["origemUrl"] == "https://exemplo.com/a"
+    assert intacto.json()["origemUrl"] == "https://exemplo.com/a"
+    assert apagou.json()["origemUrl"] is None
+
+
 def teste_editar_nome_atualiza_a_ordenacao(admin_logado, sessao, marca_e_categoria):
     """`nome_ordenacao` é preenchida por listener do modelo. Se a edição
     passasse por `update()` do Core, o produto ficaria ordenado pelo nome

@@ -20,6 +20,7 @@
   ],
   "camposDeResposta": [
     {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"variacoes[].corId","descricao":"Id da cor na paleta (null em tamanho). A tela reenvia a grade com este id, porque o texto deixa de casar com o slug depois de uma renomeação.","origem":"revisão 0007"},
-    {"metodo":"PATCH","rota":"/admin/produtos/{produtoId}/variacoes","campo":"[].corId","descricao":"O mesmo campo, na grade devolvida depois de gravar.","origem":"revisão 0007"}
+    {"metodo":"PATCH","rota":"/admin/produtos/{produtoId}/variacoes","campo":"[].corId","descricao":"O mesmo campo, na grade devolvida depois de gravar.","origem":"revisão 0007"},
+    {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"origemUrl","descricao":"Link de onde a peça veio (álbum do fornecedor), ou null. A revisão preenche ao aprovar; o painel também aceita em POST e PATCH (http/https; \"\" ou null no PATCH apaga).","origem":"pedido de 02/10/2026"}
   ]
 }

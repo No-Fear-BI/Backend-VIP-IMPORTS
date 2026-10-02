@@ -6,10 +6,11 @@ de marca e categoria, que são o que os seletores do formulário precisam — o
 site público usa slug, que é o que vai na URL.
 """
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
@@ -21,6 +22,22 @@ StatusProduto = Literal["normal", "esgotado", "oculto"]
 # selecionar duas páginas inteiras e ainda deixa a transação curta. Sem teto,
 # uma seleção de "todos" tentaria carregar 11 mil ids numa requisição.
 LIMITE_LOTE = 100
+
+_LINK_HTTP = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
+
+def _limpar_origem_url(valor: str | None) -> str | None:
+    """Link de origem (Yupoo, site do fornecedor): vazio vira `None`; o resto
+    precisa ser um endereço http(s) sem espaço. Só guardamos o texto; o painel
+    abre o link, o backend nunca o acessa."""
+    if valor is None:
+        return None
+    valor = valor.strip()
+    if not valor:
+        return None
+    if len(valor) > 2000 or not _LINK_HTTP.match(valor):
+        raise ValueError("Informe um link completo, começando com http:// ou https://.")
+    return valor
 
 
 class ProdutoAdminItem(EsquemaResposta):
@@ -76,6 +93,8 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     marca: Referencia
     categoria: Referencia
     colecao: Referencia
+    # De onde a peça veio (álbum do fornecedor); `None` se não foi registrado.
+    origem_url: str | None = None
     imagens: list[ImagemDetalhe]
     variacoes: list[VariacaoAdmin]
     criado_em: datetime
@@ -97,6 +116,10 @@ class ProdutoCriar(EsquemaEntrada):
     categoria_id: int
     # Feminino, masculino ou os dois (unissex). Obrigatório: todo produto tem público.
     publicos: list[Literal["feminino", "masculino"]] = Field(min_length=1, max_length=2)
+    # Opcional: link de onde a peça veio, para a equipe voltar à fonte depois.
+    origem_url: str | None = None
+
+    _origem_url = field_validator("origem_url")(_limpar_origem_url)
 
 
 class ProdutoEditar(EsquemaEntrada):
@@ -116,6 +139,10 @@ class ProdutoEditar(EsquemaEntrada):
     categoria_id: int | None = None
     categorias_ids: list[int] | None = Field(None, min_length=1, max_length=5)
     publicos: list[Literal["feminino", "masculino"]] | None = Field(None, min_length=1, max_length=2)
+    # `null` ou "" apaga o link.
+    origem_url: str | None = None
+
+    _origem_url = field_validator("origem_url")(_limpar_origem_url)
 
 
 class LoteEntrada(EsquemaEntrada):

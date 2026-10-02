@@ -282,6 +282,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         destaque=produto.destaque,
         em_novidades=produto.em_novidades,
         destaque_ordem=produto.destaque_ordem,
+        origem_url=produto.origem_url,
         marca_id=produto.marca_id,
         categoria_id=produto.categoria_id,
         publicos=publicos(produto.feminino, produto.masculino),
@@ -481,6 +482,7 @@ def criar_produto(sessao: Session, dados: ProdutoCriar) -> ProdutoAdminDetalhe:
         destaque=dados.destaque,
         em_novidades=dados.em_novidades,
         destaque_ordem=dados.destaque_ordem,
+        origem_url=dados.origem_url,
         marca_id=dados.marca_id,
         categoria_id=dados.categoria_id,
         feminino=feminino,
@@ -536,6 +538,8 @@ def editar_produto(
         produto.nome = dados.nome.strip()
     if "descricao" in informados:
         produto.descricao = dados.descricao
+    if "origem_url" in informados:
+        produto.origem_url = dados.origem_url
     if "status" in informados and dados.status:
         produto.status = dados.status
     if "marca_id" in informados and dados.marca_id is not None:
