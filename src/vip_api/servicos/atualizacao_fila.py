@@ -13,6 +13,7 @@ de um processo e a trava (`sync-yupoo.lock`, criada com O_EXCL) impede duas cole
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -24,8 +25,13 @@ TRAVA = DADOS / "sync-yupoo.lock"
 ESTADO = DADOS / "sync-yupoo-estado.json"
 RELATORIO = DADOS / "sync-yupoo-report.json"
 
-# Passado disto, uma trava sem processo por trás (a API reiniciou no meio) é descartada.
+# Tempo máximo de uma coleta inteira.
 LIMITE_SEGUNDOS = 2 * 60 * 60
+# Enquanto a coleta roda, a thread "bate" na trava (mtime) a cada BATIDA segundos. Trava sem batida há
+# mais de VALIDADE_TRAVA é de uma coleta morta (a API reiniciou no meio): sem isso o botão ficaria
+# preso em "Atualizando…" por horas depois de qualquer reinício.
+BATIDA = 20
+VALIDADE_TRAVA = 120
 _fio: threading.Thread | None = None
 
 
@@ -60,7 +66,7 @@ def _ler_json(caminho: Path) -> dict:
 
 def _trava_viva() -> bool:
     try:
-        return time.time() - TRAVA.stat().st_mtime <= LIMITE_SEGUNDOS + 300
+        return time.time() - TRAVA.stat().st_mtime <= VALIDADE_TRAVA
     except OSError:
         return False
 
@@ -97,12 +103,24 @@ def _cauda(texto: str) -> str:
 
 def _executar(inicio: str) -> None:
     try:
-        resultado = subprocess.run(
-            _comando(), cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=LIMITE_SEGUNDOS,
-        )
-        if resultado.returncode != 0:
-            raise RuntimeError(_cauda(resultado.stderr or resultado.stdout))
+        # Saída num arquivo temporário (e não num pipe): ninguém precisa ler enquanto roda, então um
+        # script falante não trava no buffer.
+        with tempfile.TemporaryFile() as saida:
+            processo = subprocess.Popen(_comando(), cwd=RAIZ, stdout=saida, stderr=subprocess.STDOUT)
+            comeco = time.monotonic()
+            while True:
+                try:
+                    codigo = processo.wait(timeout=BATIDA)
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() - comeco > LIMITE_SEGUNDOS:
+                        processo.kill()
+                        raise RuntimeError("A coleta passou do tempo limite e foi cancelada.")
+                    os.utime(TRAVA)  # batida: "ainda estou vivo"
+            saida.seek(0)
+            texto = saida.read().decode("utf-8", errors="replace")
+        if codigo != 0:
+            raise RuntimeError(_cauda(texto))
         relatorio = _ler_json(RELATORIO)
         _gravar_estado(
             estado="concluido", iniciadoEm=inicio, concluidoEm=_agora(),

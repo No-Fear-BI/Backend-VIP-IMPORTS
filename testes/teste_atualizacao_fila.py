@@ -104,13 +104,26 @@ def teste_com_coleta_em_andamento_nao_comeca_outra(pasta, monkeypatch):
 def teste_trava_velha_de_processo_morto_e_descartada(pasta, monkeypatch):
     _programa(monkeypatch, ESCREVE_RELATORIO)
     fila.TRAVA.write_text("")
-    velha = time.time() - fila.LIMITE_SEGUNDOS - 3600
+    velha = time.time() - fila.VALIDADE_TRAVA - 60
     os.utime(fila.TRAVA, (velha, velha))
 
     fila.iniciar()
     _esperar_fim()
 
     assert fila.estado()["estado"] == "concluido"
+
+
+def teste_coleta_longa_bate_na_trava_para_nao_parecer_morta(pasta, monkeypatch):
+    monkeypatch.setattr(fila, "BATIDA", 0.1)
+    _programa(monkeypatch, "import time; time.sleep(0.6)")
+
+    fila.iniciar()
+    inicio = fila.TRAVA.stat().st_mtime
+    time.sleep(0.45)
+    meio = fila.TRAVA.stat().st_mtime
+    _esperar_fim()
+
+    assert meio > inicio  # a thread bateu na trava enquanto o script rodava
 
 
 def teste_estado_rodando_sem_trava_e_coleta_interrompida(pasta):

@@ -306,3 +306,27 @@ def contar_consultas():
             event.remove(engine, "before_cursor_execute", registrar)
 
     return _contar
+
+
+@pytest.fixture(autouse=True)
+def _coleta_do_yupoo_inofensiva(tmp_path, monkeypatch):
+    """Nenhum teste pode disparar a coleta REAL do Yupoo.
+
+    `POST /admin/revisao/atualizar` roda `node scripts/sync-yupoo.mjs`; as varreduras de rota
+    (teste_protecao_admin, teste_vazamento_erros) chamam todas as rotas com um admin válido e
+    iniciariam a coleta de verdade, deixando trava e estado em data/. Aqui o serviço aponta para
+    uma pasta descartável e o comando vira um programa que não faz nada.
+    """
+    import sys
+
+    from vip_api.servicos import atualizacao_fila
+
+    monkeypatch.setattr(atualizacao_fila, "DADOS", tmp_path)
+    monkeypatch.setattr(atualizacao_fila, "TRAVA", tmp_path / "sync-yupoo.lock")
+    monkeypatch.setattr(atualizacao_fila, "ESTADO", tmp_path / "sync-yupoo-estado.json")
+    monkeypatch.setattr(atualizacao_fila, "RELATORIO", tmp_path / "sync-yupoo-report.json")
+    monkeypatch.setattr(atualizacao_fila, "_comando", lambda: [sys.executable, "-c", "pass"])
+    monkeypatch.setattr(atualizacao_fila, "_fio", None)
+    yield
+    if atualizacao_fila._fio:
+        atualizacao_fila._fio.join(timeout=10)
