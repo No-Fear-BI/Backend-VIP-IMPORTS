@@ -110,9 +110,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # `!cancelled() && needs.construir.result == 'success'` nos dois deploys: com
+  # `tag` preenchida, `testes` é PULADO de propósito, e o GitHub pula em cascata
+  # todo job cuja cadeia de `needs` tenha um job pulado — a não ser que o `if`
+  # use uma função de status. Sem isso, "publicar versão existente" terminava
+  # verde sem publicar nada.
   homologacao:
     needs: construir
-    if: ${{ github.event_name == 'push' || inputs.ambiente == 'homologacao' }}
+    if: ${{ !cancelled() && needs.construir.result == 'success' && (github.event_name == 'push' || inputs.ambiente == 'homologacao') }}
     runs-on: ubuntu-latest
     environment:
       name: homologacao
@@ -133,7 +138,7 @@ jobs:
 
   producao:
     needs: construir
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.ambiente == 'producao' }}
+    if: ${{ !cancelled() && needs.construir.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.ambiente == 'producao' }}
     runs-on: ubuntu-latest
     # O ambiente "producao" existe em Settings > Environments, mas a proteção
     # "Required reviewers" NÃO ESTÁ VALENDO: a organização está no GitHub Free
