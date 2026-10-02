@@ -49,6 +49,7 @@ class ProdutoAdminItem(EsquemaResposta):
     status: StatusProduto
     destaque: bool
     em_novidades: bool
+    origem_url: str | None = None
     marca: Referencia
     categoria: Referencia
     colecao: Referencia

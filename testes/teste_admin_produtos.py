@@ -152,6 +152,19 @@ def teste_origem_url_entra_na_criacao_e_volta_no_detalhe(admin_logado, marca_e_c
     assert admin_logado.get(f"{ROTA}/{criado.json()['id']}").json()["origemUrl"] == link
 
 
+def teste_listagem_traz_origem_url(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    link = "https://exemplo.com/album"
+    admin_logado.post(
+        ROTA,
+        json={"nome": "Lista Origem", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"], "origemUrl": link},
+    )
+
+    linhas = admin_logado.get(ROTA, params={"busca": "Lista Origem"}).json()["dados"]
+
+    assert [linha["origemUrl"] for linha in linhas] == [link]
+
+
 def teste_origem_url_e_opcional_e_vem_nula(admin_logado, marca_e_categoria):
     marca, categoria = marca_e_categoria
 
