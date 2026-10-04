@@ -47,6 +47,7 @@ class ProdutoAdminItem(EsquemaResposta):
     codigo: str
     nome: str
     status: StatusProduto
+    quantidade_disponivel: int | None = None
     destaque: bool
     em_novidades: bool
     origem_url: str | None = None
@@ -84,6 +85,7 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     nome: str
     descricao: str | None = None
     status: StatusProduto
+    quantidade_disponivel: int | None = None
     destaque: bool
     em_novidades: bool
     destaque_ordem: int | None = None
@@ -109,6 +111,7 @@ class ProdutoCriar(EsquemaEntrada):
     nome: str = Field(min_length=1, max_length=180)
     descricao: str | None = None
     status: StatusProduto = "normal"
+    quantidade_disponivel: int | None = Field(None, ge=0, le=2147483647, strict=True)
     destaque: bool = False
     # Entra na página Novidades (por 14 dias). Padrão: sim.
     em_novidades: bool = True
@@ -133,6 +136,7 @@ class ProdutoEditar(EsquemaEntrada):
     nome: str | None = Field(None, min_length=1, max_length=180)
     descricao: str | None = None
     status: StatusProduto | None = None
+    quantidade_disponivel: int | None = Field(None, ge=0, le=2147483647, strict=True)
     destaque: bool | None = None
     em_novidades: bool | None = None
     destaque_ordem: int | None = None

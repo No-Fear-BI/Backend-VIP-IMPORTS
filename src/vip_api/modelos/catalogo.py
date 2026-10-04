@@ -136,6 +136,7 @@ class Produto(Base):
     __tablename__ = "produtos"
     __table_args__ = (
         UniqueConstraint("codigo", name="uq_produtos_codigo"),
+        CheckConstraint("quantidade_disponivel >= 0", name="ck_produtos_quantidade_disponivel"),
         ForeignKeyConstraint(
             ["marca_id"], ["marcas.id"], name="fk_produtos_marca_id_marcas", ondelete="RESTRICT"
         ),
@@ -254,6 +255,7 @@ class Produto(Base):
     nome_ordenacao: Mapped[str] = mapped_column(Text(collation="C"))
     descricao: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(PRODUTO_STATUS, server_default="normal")
+    quantidade_disponivel: Mapped[int | None] = mapped_column(Integer)
     destaque: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Fora da página Novidades quando falso (0017); a janela de 14 dias vale além disso.
     em_novidades: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))

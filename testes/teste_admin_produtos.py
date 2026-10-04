@@ -52,6 +52,38 @@ def teste_criar_com_codigo_informado(admin_logado, marca_e_categoria):
     assert corpo["publicos"] == ["feminino"]
 
 
+def teste_quantidade_criar_editar_listar_e_limpar(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json={
+        'nome': 'Produto com quantidade', 'marcaId': marca.id, 'categoriaId': categoria.id,
+        'publicos': ['masculino'], 'quantidadeDisponivel': 8, 'destaque': True,
+    })
+    assert resposta.status_code == 201
+    produto = resposta.json()
+    assert produto['quantidadeDisponivel'] == 8
+    rota = f"{ROTA}/{produto['id']}"
+    # PATCH de outro campo preserva a quantidade.
+    assert admin_logado.patch(rota, json={'nome': 'Nome atualizado'}).json()['quantidadeDisponivel'] == 8
+    assert admin_logado.get(f"/api/v1/produtos/{produto['codigo']}").json()['quantidadeDisponivel'] == 8
+    lista = admin_logado.get('/api/v1/produtos', params={'busca': produto['codigo']}).json()['dados']
+    assert lista[0]['quantidadeDisponivel'] == 8
+    lista_admin = admin_logado.get(ROTA, params={'busca': produto['codigo']}).json()['dados']
+    assert lista_admin[0]['quantidadeDisponivel'] == 8
+    assert admin_logado.patch(rota, json={'quantidadeDisponivel': 0, 'status': 'esgotado'}).json()['quantidadeDisponivel'] == 0
+    assert admin_logado.get(f"/api/v1/produtos/{produto['codigo']}").json()['status'] == 'esgotado'
+    assert admin_logado.patch(rota, json={'quantidadeDisponivel': None}).json()['quantidadeDisponivel'] is None
+
+
+@pytest.mark.parametrize('quantidade', [-1, 2.5, True, '8', 2147483648])
+def teste_produto_recusa_quantidade_invalida(admin_logado, marca_e_categoria, quantidade):
+    marca, categoria = marca_e_categoria
+    corpo = {'nome': 'Produto', 'marcaId': marca.id, 'categoriaId': categoria.id, 'publicos': ['feminino']}
+    assert admin_logado.post(ROTA, json={**corpo, 'quantidadeDisponivel': quantidade}).status_code == 400
+    novo = admin_logado.post(ROTA, json={**corpo, 'quantidadeDisponivel': 3}).json()
+    assert admin_logado.patch(f"{ROTA}/{novo['id']}", json={'quantidadeDisponivel': quantidade}).status_code == 400
+    assert admin_logado.get(f"{ROTA}/{novo['id']}").json()['quantidadeDisponivel'] == 3
+
+
 def teste_criar_sem_codigo_gera_no_padrao_da_marca(admin_logado, marca_e_categoria):
     """Marca ainda sem produto: o prefixo sai do nome (Chanel -> CHN)."""
     marca, categoria = marca_e_categoria
