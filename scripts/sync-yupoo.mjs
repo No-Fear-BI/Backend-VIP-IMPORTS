@@ -42,7 +42,7 @@ export function mesclar(anteriores, coletados) {
   const mapa = new Map(anteriores.map(p => [p.id, p]));
   for (const p of coletados) {
     const anterior = mapa.get(p.id);
-    mapa.set(p.id, { ...p, category: anterior?.category || p.category, ...(anterior?.brand ? { brand: anterior.brand } : {}) });
+    mapa.set(p.id, { ...p, category: p.category !== 'A classificar' ? p.category : (anterior?.category || p.category), ...(anterior?.brand ? { brand: anterior.brand } : {}) });
   }
   return [...mapa.values()];
 }
@@ -54,7 +54,12 @@ export function montarFontes(links, incluirPadrao = false) {
   const doArquivo = [...new Set(links)].map(link => {
     const url = new URL(link);
     if (url.protocol !== 'https:' || !url.hostname.endsWith('.x.yupoo.com')) throw new Error('Fornecedor inválido');
-    return { id: url.hostname.split('.')[0], base: url.origin, caminho: url.pathname };
+    const categoria = url.hostname === 'jyxzfz.x.yupoo.com' && url.pathname === '/categories/2986404'
+      ? 'Cintos'
+      : url.hostname === 'jyxzfz.x.yupoo.com' && url.pathname === '/categories/3709412'
+        ? 'Bolsas'
+        : undefined;
+    return { id: url.hostname.split('.')[0], base: url.origin, caminho: url.pathname, ...(categoria ? { categoria } : {}) };
   });
   if (!incluirPadrao) return doArquivo;
   const jaCobertos = new Set(doArquivo.map(f => f.id));

@@ -30,6 +30,7 @@ class ProdutoItem(EsquemaResposta):
     # A listagem pública nunca devolve "oculto" — produto oculto some da rota
     # inteira. "esgotado" aparece normalmente, marcado: ele é vitrine.
     status: Literal["normal", "esgotado"]
+    quantidade_disponivel: int | None = None
     destaque: bool
     marca: Referencia
     categoria: Referencia
@@ -63,6 +64,7 @@ class ProdutoDetalhe(EsquemaResposta):
     nome: str
     descricao: str | None = None
     status: Literal["normal", "esgotado"]
+    quantidade_disponivel: int | None = None
     # A interface `Produto` da seção 07 do contrato declara `destaque` como
     # obrigatório — o detalhe precisa trazer. `capa` continua fora: é
     # redundante com `imagens`, que já vem completo aqui.

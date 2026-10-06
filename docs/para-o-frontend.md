@@ -1,3 +1,14 @@
+## Atualização de 05/10/2026 — pedidos sem histórico
+
+Por solicitação do cliente, o histórico de pedidos foi removido. `POST /selecoes`
+responde 200 com `itens`, `mensagemWhatsapp` e `linkWhatsapp`, gerados em memória.
+Não cria id, data, registro de pedido nem cópia dos dados do cliente. O carrinho
+em andamento é mantido. As rotas GET /selecoes e GET /admin/selecoes (lista e
+detalhe) foram removidas, assim como selecoesNoMes e totalSelecoes dos relatórios.
+A migração 0019 remove as tabelas selecoes e selecao_itens e seu conteúdo antigo.
+O histórico da conversa fica no WhatsApp. Esta decisão substitui as referências
+anteriores a histórico de seleções neste documento.
+
 # Para o frontend
 
 O backend agora é FastAPI (Python), tudo sob o prefixo `/api/v1`, como o contrato já previa.
@@ -213,7 +224,7 @@ Cor deixou de ser texto solto dentro da variação e virou **tabela**. O que mud
 
 Execute `node scripts/sync-yupoo.mjs` na raiz do backend. O script percorre a listagem global do fornecedor qwer888 até o total de páginas declarado, sem filtro de marcas. Confere o total de álbuns únicos antes de substituir o JSON, cria `data/pending-products.backup.json` e registra a contagem em `data/sync-yupoo-report.json`. Uma falha de rede ou contagem mantém a fila anterior. Reexecuções usam o ID do álbum e não duplicam produtos. Registros antigos e outros fornecedores são preservados. Produtos novos ficam em `A classificar`; categorias já atribuídas são mantidas. As decisões continuam no PostgreSQL.
 
-`GET /api/v1/admin/revisao/pendentes` aceita `pagina` (mínimo 1) e `porPagina` (1–100, padrão 60), além de `busca` e `categoria`. Retorna `items`, `total`, `categories`, `pagina`, `paginas` e `porPagina`. O total considera o filtro e exclui produtos já decididos; páginas fora do intervalo são ajustadas para a última página. O backend recarrega o catálogo quando o arquivo muda. Depois de decidir um produto, o frontend atualiza a página para repor os itens disponíveis.
+`GET /api/v1/admin/revisao/pendentes` aceita `pagina` (mínimo 1) e `porPagina` (1–100, padrão 60), além de `busca` e `categoria`. Retorna `items`, `total`, `categories`, `pagina`, `paginas` e `porPagina`. A busca combina todas as palavras digitadas no título original, na categoria e no nome traduzido, ignorando acentos, caixa e espaços extras. O total considera o filtro e exclui produtos já decididos; páginas fora do intervalo são ajustadas para a última página. O backend recarrega o catálogo quando o arquivo muda. Depois de decidir um produto, o frontend atualiza a página para repor os itens disponíveis.
 
 ## Controle de entrada da loja — seção 05, modo aprovação (28/09/2026)
 
@@ -305,7 +316,7 @@ Dois endpoints do painel (sessão de admin) para o botão **Atualizar produtos**
 O estado fica em `data/sync-yupoo-estado.json` e a trava em `data/sync-yupoo.lock` (os dois fora do git). Uma falha de rede preserva a fila anterior. **Infra:** a imagem da API agora tem Node (`Dockerfile`) e `./data` não é mais somente leitura no compose; em produção é preciso reconstruir a imagem e deixar `data/` gravável.
 
 
-## Preço interno do produto (06/10/2026, revisão 0018) — SÓ DO PAINEL
+## Preço interno do produto (06/10/2026, revisão 0020) — SÓ DO PAINEL
 
 O dono registra o preço de cada peça **só para consulta própria**. A loja continua sem preço: o campo `precoCentavos` existe **apenas nos esquemas de admin** e não sai em nenhuma rota pública (listagem, detalhe, busca, novidades, home/destaques, favoritos, carrinho, seleção). `testes/teste_preco_nao_vaza.py` varre o OpenAPI de toda rota fora de `/admin` e lê cada rota pública com um produto que tem preço; reprova se o campo aparecer.
 

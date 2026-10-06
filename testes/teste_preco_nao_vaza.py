@@ -156,7 +156,7 @@ def teste_nenhuma_rota_publica_devolve_o_preco(cliente_logado, sessao, produto_c
     _conferir_limpo(enviada, "enviar seleção")
     # O link do WhatsApp também não leva preço.
     assert not any(s in json.dumps(enviada.json()) for s in SENTINELAS_TEXTO)
-    _conferir_limpo(http.get("/api/v1/selecoes"), "histórico de seleções")
+    # O histórico de seleções deixou de existir (migração 0019): só o envio em si gera resposta.
 
 
 def teste_o_painel_continua_vendo_o_preco(admin_logado, produto_com_preco):

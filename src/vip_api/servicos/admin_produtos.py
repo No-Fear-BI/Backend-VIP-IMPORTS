@@ -153,6 +153,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 Produto.codigo,
                 Produto.nome,
                 Produto.status,
+                Produto.quantidade_disponivel,
                 Produto.destaque,
                 Produto.em_novidades,
                 Produto.origem_url,
@@ -177,6 +178,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
             interna.c.codigo,
             interna.c.nome,
             interna.c.status,
+            interna.c.quantidade_disponivel,
             interna.c.destaque,
             interna.c.em_novidades,
             interna.c.origem_url,
@@ -208,6 +210,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 codigo=linha.codigo,
                 nome=linha.nome,
                 status=linha.status,
+                quantidade_disponivel=linha.quantidade_disponivel,
                 destaque=linha.destaque,
                 em_novidades=linha.em_novidades,
                 origem_url=linha.origem_url,
@@ -285,6 +288,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         nome=produto.nome,
         descricao=produto.descricao,
         status=produto.status,
+        quantidade_disponivel=produto.quantidade_disponivel,
         destaque=produto.destaque,
         em_novidades=produto.em_novidades,
         destaque_ordem=produto.destaque_ordem,
@@ -486,6 +490,7 @@ def criar_produto(sessao: Session, dados: ProdutoCriar) -> ProdutoAdminDetalhe:
         nome=dados.nome.strip(),
         descricao=dados.descricao,
         status=dados.status,
+        quantidade_disponivel=dados.quantidade_disponivel,
         destaque=dados.destaque,
         em_novidades=dados.em_novidades,
         destaque_ordem=dados.destaque_ordem,
@@ -546,6 +551,8 @@ def editar_produto(
         produto.nome = dados.nome.strip()
     if "descricao" in informados:
         produto.descricao = dados.descricao
+    if "quantidade_disponivel" in informados:
+        produto.quantidade_disponivel = dados.quantidade_disponivel
     if "origem_url" in informados:
         produto.origem_url = dados.origem_url
     if "preco_centavos" in informados:
@@ -581,10 +588,7 @@ def editar_produto(
 
 
 def excluir_produto(sessao: Session, produto_id: int) -> None:
-    """Imagens, variações, favoritos e itens de carrinho somem junto;
-    `selecao_itens` fica, com `produto_id` nulo e o texto congelado intacto,
-    porque é o histórico do que o cliente enviou e não pode depender de o
-    produto ainda existir.
+    """Imagens, variações, favoritos e itens de carrinho somem junto.
 
     AS VARIAÇÕES SAEM PRIMEIRO, por `remover_variacoes` — a mesma porta que a
     substituição do conjunto usa. Apagar o produto apagaria as variações pela

@@ -9,7 +9,6 @@ conta cada ida ao banco, mostrando o SQL de cada uma.
     python scripts/contar_consultas.py marcas
     python scripts/contar_consultas.py admin-produtos [porPagina]
     python scripts/contar_consultas.py admin-resumo
-    python scripts/contar_consultas.py admin-selecoes [porPagina]
     python scripts/contar_consultas.py admin-clientes [porPagina]
 """
 
@@ -90,23 +89,13 @@ def main() -> None:
                 f"({resultado.produtos_esgotados} esgotados, "
                 f"{resultado.produtos_ocultos} ocultos), "
                 f"{len(resultado.por_marca)} marcas, "
-                f"{resultado.selecoes_no_mes} seleções no mês, "
                 f"{resultado.total_clientes} clientes"
-            )
-        elif alvo == "admin-selecoes":
-            por_pagina = int(argumento) if argumento else 20
-            resultado = admin_relatorios.listar_selecoes(sessao, por_pagina=por_pagina)
-            itens = sum(len(s.itens) for s in resultado.dados)
-            descricao = (
-                f"{len(resultado.dados)} seleções de {resultado.paginacao.total}, "
-                f"{itens} itens congelados no total"
             )
         elif alvo == "admin-clientes":
             por_pagina = int(argumento) if argumento else 20
             resultado = admin_relatorios.listar_clientes(sessao, por_pagina=por_pagina)
             descricao = (
                 f"{len(resultado.dados)} clientes de {resultado.paginacao.total}, "
-                f"{sum(c.total_selecoes for c in resultado.dados)} seleções somadas"
             )
         elif alvo == "marcas":
             resultado = navegacao.listar_marcas(sessao)

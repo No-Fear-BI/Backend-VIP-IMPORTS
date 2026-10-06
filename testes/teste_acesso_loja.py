@@ -176,7 +176,7 @@ def teste_aprovacao_barra_cliente_recusado(app_de_teste, sessao):
 def teste_aprovacao_nao_barra_cliente_aprovado(cliente_logado, sessao, catalogo):
     _ligar_aprovacao(sessao)
     for caminho in ("/api/v1/home", "/api/v1/produtos", "/api/v1/marcas", "/api/v1/colecoes",
-                    "/api/v1/favoritos", "/api/v1/carrinho", "/api/v1/selecoes"):
+                    "/api/v1/favoritos", "/api/v1/carrinho"):
         resposta = cliente_logado.get(caminho)
         assert resposta.status_code == 200, f"{caminho}: {resposta.status_code} {resposta.text}"
 

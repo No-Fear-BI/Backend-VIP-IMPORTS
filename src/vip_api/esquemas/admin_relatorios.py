@@ -29,39 +29,7 @@ class Resumo(EsquemaResposta):
     produtos_esgotados: int
     produtos_ocultos: int
     por_marca: list[ContagemPorMarca]
-    selecoes_no_mes: int
     total_clientes: int
-
-
-class SelecaoItemAdmin(EsquemaResposta):
-    """Item CONGELADO. `produtoId` vem nulo quando o produto foi excluído
-    depois do envio — o resto do texto continua igual ao que o cliente viu."""
-
-    produto_id: int | None = None
-    codigo: str
-    nome: str
-    marca: str
-    categoria: str
-    colecao: str
-    imagem_url: str | None = None
-    variacao: str | None = None
-    observacao: str | None = None
-
-
-class ClienteDaSelecao(EsquemaResposta):
-    id: int | None = None
-    nome: str | None = None
-    email: str
-    telefone: str | None = None
-
-
-class SelecaoAdmin(EsquemaResposta):
-    id: int
-    criado_em: datetime
-    total_itens: int
-    observacao: str | None = None
-    cliente: ClienteDaSelecao
-    itens: list[SelecaoItemAdmin]
 
 
 class ClienteAdmin(EsquemaResposta):
@@ -73,6 +41,5 @@ class ClienteAdmin(EsquemaResposta):
     nome: str | None = None
     email: str
     telefone: str | None = None
-    total_selecoes: int
     ultimo_acesso_em: datetime | None = None
     criado_em: datetime

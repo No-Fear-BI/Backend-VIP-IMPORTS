@@ -20,7 +20,6 @@ from vip_api.modelos.catalogo import (
     ProdutoVariacao,
 )
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente, ClienteSessao, Favorito
-from vip_api.modelos.selecao import Selecao, SelecaoItem
 
 __all__ = [
     "AcessoConfig",
@@ -39,7 +38,5 @@ __all__ = [
     "Produto",
     "ProdutoImagem",
     "ProdutoVariacao",
-    "Selecao",
-    "SelecaoItem",
     "TentativaAcesso",
 ]

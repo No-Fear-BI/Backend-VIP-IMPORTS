@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 from time import monotonic
+from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -40,7 +41,7 @@ from vip_api.esquemas.admin_produto import PRECO_MAXIMO_CENTAVOS
 from vip_api.modelos.catalogo import Produto
 from vip_api.modelos.revisao import DecisaoRevisao
 from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos, validar_publicos
-from vip_api.texto import gerar_slug
+from vip_api.texto import gerar_slug, normalizar
 from vip_api.servicos.imagens_processamento import abrir_imagem
 from vip_api.servicos.importacao_catalogo import importar_produto
 from vip_api.servicos import atualizacao_fila
@@ -140,6 +141,8 @@ class Decisao(BaseModel):
     emNovidades: bool = True
     # Preço de consulta interna do dono, em centavos de real. Opcional: sem ele a aprovação segue normal.
     precoCentavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
+    quantidadeDisponivel: int | None = Field(None, ge=0, le=2147483647, strict=True)
+    statusProduto: Literal['normal', 'esgotado'] = 'normal'
     # Fotos do álbum que entram no produto, na ordem final: a primeira é a capa. Sem isto entra só a
     # foto de capa do álbum, como antes.
     fotos: list[str] | None = Field(None, min_length=1, max_length=MAXIMO_FOTOS_POR_PRODUTO)
@@ -148,7 +151,16 @@ class Decisao(BaseModel):
 def pendentes(busca:str='', categoria:str='Todos', pagina:int=Query(1,ge=1), por_pagina:int=Query(60,alias='porPagina',ge=1,le=100), sessao:Session=Depends(obter_sessao)):
     dados, _ = _catalogo()
     decididos=set(sessao.scalars(select(DecisaoRevisao.product_id)).all()); fila=[p for p in dados if p['id'] not in decididos]
-    filtrados=[p for p in fila if (categoria=='Todos' or p['category']==categoria) and busca.casefold() in p['name'].casefold()]
+    termos = normalizar(busca).split()
+    filtrados = []
+    for p in fila:
+        if categoria != 'Todos' and p['category'] != categoria:
+            continue
+        # O título do fornecedor pode conter apenas códigos/tamanhos. A categoria
+        # e o nome traduzido permitem encontrar a peça pelo nome em português.
+        texto = normalizar(' '.join((p['name'], p['category'], traduzir(p)['translatedName'])))
+        if all(termo in texto for termo in termos):
+            filtrados.append(p)
     paginas=max(1,(len(filtrados)+por_pagina-1)//por_pagina)
     pagina=min(pagina,paginas); inicio=(pagina-1)*por_pagina
     return {'items':[dict(p, **traduzir(p)) for p in filtrados[inicio:inicio+por_pagina]],'total':len(filtrados),'categories':sorted({p['category'] for p in fila}),'pagina':pagina,'paginas':paginas,'porPagina':por_pagina}
@@ -231,6 +243,9 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
             produto.feminino, produto.masculino = flags
             produto.em_novidades = corpo.emNovidades
             produto.preco_centavos = corpo.precoCentavos
+            if 'quantidadeDisponivel' in corpo.model_fields_set:
+                produto.quantidade_disponivel = corpo.quantidadeDisponivel
+            produto.status = corpo.statusProduto
             if destinos:
                 definir_destinos(sessao, produto, destinos)
         except ValueError as exc:

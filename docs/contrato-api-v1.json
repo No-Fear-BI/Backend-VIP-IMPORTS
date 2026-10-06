@@ -2,7 +2,7 @@
   "versao": "1.0",
   "origem": "documento",
   "fonte": "Contrato de API · Loja Virtual VIP Imports · versão 1.0 (PDF, circulação interna)",
-  "observacao": "Extraído do documento, não reconstruído. As seções 02 a 4.4 somam os 52 endpoints declarados. A seção 05 traz 6 rotas previstas e congeladas por decisão do cliente; em 28/09/2026 o cliente ligou o modo 3 (aprovação) e 5 delas saíram do congelamento. Só POST /acesso/senha (modo 2, senha compartilhada) continua congelada e não pode existir na aplicação. Os nomes de caminho usam a grafia dos parâmetros como o backend os registra; o documento escreve :id onde aqui se lê {produtoId} e {imagemId}.",
+  "observacao": "Extraído do documento e atualizado em 05/10/2026: removidas as três rotas GET de histórico de seleções por solicitação do cliente; POST /selecoes passa a responder 200 com itens, mensagemWhatsapp e linkWhatsapp, sem persistência. As seções 02 a 4.4 originalmente somavam os 52 endpoints declarados. A seção 05 traz 6 rotas previstas e congeladas por decisão do cliente; em 28/09/2026 o cliente ligou o modo 3 (aprovação) e 5 delas saíram do congelamento. Só POST /acesso/senha (modo 2, senha compartilhada) continua congelada e não pode existir na aplicação. Os nomes de caminho usam a grafia dos parâmetros como o backend os registra; o documento escreve :id onde aqui se lê {produtoId} e {imagemId}.",
   "endpoints": [
     {"metodo":"GET","rota":"/home","secao":"02","situacao":"implementar","handler":"montarHome"},
     {"metodo":"GET","rota":"/produtos","secao":"02","situacao":"implementar","handler":"listarProdutos"},
@@ -25,7 +25,6 @@
     {"metodo":"DELETE","rota":"/carrinho/{itemId}","secao":"03","situacao":"implementar","handler":"removerItemCarrinho"},
     {"metodo":"POST","rota":"/carrinho/migrar","secao":"03","situacao":"implementar","handler":"migrarCarrinhoAnonimo","nota":"Está no contrato. O que NÃO estava definido era o formato do corpo da requisição."},
     {"metodo":"POST","rota":"/selecoes","secao":"03","situacao":"implementar","handler":"criarSelecao"},
-    {"metodo":"GET","rota":"/selecoes","secao":"03","situacao":"implementar","handler":"listarSelecoesDoCliente"},
 
     {"metodo":"POST","rota":"/admin/sessao","secao":"4.1","situacao":"implementar","handler":"autenticarAdmin"},
     {"metodo":"DELETE","rota":"/admin/sessao","secao":"4.1","situacao":"implementar","handler":"encerrarSessaoAdmin"},
@@ -58,8 +57,6 @@
     {"metodo":"PATCH","rota":"/admin/destaques/produtos","secao":"4.3","situacao":"implementar","handler":"definirProdutosDestaque"},
     {"metodo":"PATCH","rota":"/admin/destaques/categorias","secao":"4.3","situacao":"implementar","handler":"definirCategoriasDestaque"},
 
-    {"metodo":"GET","rota":"/admin/selecoes","secao":"4.4","situacao":"implementar","handler":"listarSelecoesAdmin"},
-    {"metodo":"GET","rota":"/admin/selecoes/{selecaoId}","secao":"4.4","situacao":"implementar","handler":"obterSelecaoAdmin"},
     {"metodo":"GET","rota":"/admin/clientes","secao":"4.4","situacao":"implementar","handler":"listarClientesAdmin"},
 
     {"metodo":"GET","rota":"/acesso/estado","secao":"05","situacao":"implementar","handler":"obterEstadoAcesso","modo":"todos"},

@@ -136,6 +136,7 @@ class Produto(Base):
     __tablename__ = "produtos"
     __table_args__ = (
         UniqueConstraint("codigo", name="uq_produtos_codigo"),
+        CheckConstraint("quantidade_disponivel >= 0", name="ck_produtos_quantidade_disponivel"),
         ForeignKeyConstraint(
             ["marca_id"], ["marcas.id"], name="fk_produtos_marca_id_marcas", ondelete="RESTRICT"
         ),
@@ -258,11 +259,12 @@ class Produto(Base):
     nome_ordenacao: Mapped[str] = mapped_column(Text(collation="C"))
     descricao: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(PRODUTO_STATUS, server_default="normal")
+    quantidade_disponivel: Mapped[int | None] = mapped_column(Integer)
     destaque: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     # Fora da página Novidades quando falso (0017); a janela de 14 dias vale além disso.
     em_novidades: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     destaque_ordem: Mapped[int | None] = mapped_column(Integer)
-    # Preço de consulta INTERNA do dono, em centavos de real (0018). Só o painel lê e grava;
+    # Preço de consulta INTERNA do dono, em centavos de real (0020). Só o painel lê e grava;
     # nenhum esquema público pode ter este campo (testes/teste_preco_nao_vaza.py).
     preco_centavos: Mapped[int | None] = mapped_column(Integer)
     marca_id: Mapped[int] = mapped_column(Integer)

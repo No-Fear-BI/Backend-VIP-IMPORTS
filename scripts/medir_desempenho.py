@@ -380,7 +380,6 @@ def _alvos(sessao) -> tuple[list[Medicao], set[int]]:
             consultas_max=3,
         ),
         Medicao("painel: resumo", "/admin/resumo", painel=True, p95_ms=P95_PAINEL_MS, consultas_max=4),
-        Medicao("painel: seleções", "/admin/selecoes", painel=True, p95_ms=P95_PAINEL_MS, consultas_max=4),
         Medicao("painel: clientes", "/admin/clientes", painel=True, p95_ms=P95_PAINEL_MS, consultas_max=3),
     ]
     return publico + painel, visiveis

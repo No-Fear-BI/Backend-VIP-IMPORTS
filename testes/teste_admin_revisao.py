@@ -66,6 +66,35 @@ def teste_pendentes_lista_o_album_de_teste(admin_logado, fila_de_teste):
     assert corpo["items"][0]["supplier"] == "qwer888"
 
 
+@pytest.mark.parametrize(('busca', 'esperados'), [
+    ('jaquetas', ['qwer888-1', 'qwer888-2']),
+    (' JAQUETA  ', ['qwer888-1', 'qwer888-2']),
+    ('camisa', ['qwer888-3']),
+    ('cintos', ['qwer888-4']),
+    ('sueter', ['qwer888-5']),
+    ('couro jaquetas', ['qwer888-2']),
+    ('165p', ['qwer888-1']),
+    ('inexistente', []),
+])
+def teste_busca_categoria_e_traducao_antes_de_paginar(admin_logado, fila_de_teste, busca, esperados):
+    albuns = [dict(ALBUM_TESTE, id=f'qwer888-{i}', category=categoria, name=nome)
+              for i, (categoria, nome) in enumerate([
+                  ('Jaquetas', '165p SMLXL'), ('Jaquetas', 'leather black'),
+                  ('Camisas', '180p'), ('Cintos', '200p'), ('Suéteres', '210p'),
+              ], 1)]
+    fila_de_teste.write_text(json.dumps(albuns), encoding='utf-8')
+    resposta = admin_logado.get(f'{ROTA}/pendentes', params={'busca': busca, 'porPagina': 1})
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo['total'] == len(esperados)
+    assert [p['id'] for p in corpo['items']] == esperados[:1]
+    if len(esperados) > 1:
+        segunda = admin_logado.get(f'{ROTA}/pendentes', params={'busca': busca, 'porPagina': 1, 'pagina': 2}).json()
+        assert [p['id'] for p in segunda['items']] == esperados[1:2]
+    outro_filtro = admin_logado.get(f'{ROTA}/pendentes', params={'busca': busca, 'categoria': 'Bolsas'}).json()
+    assert outro_filtro['total'] == 0
+
+
 def teste_aprovar_exige_marca_e_colecao(admin_logado, sessao, fila_de_teste):
     resposta = admin_logado.post(ROTA, json={"productId": ALBUM_TESTE["id"], "status": "approved"})
 
@@ -74,6 +103,32 @@ def teste_aprovar_exige_marca_e_colecao(admin_logado, sessao, fila_de_teste):
     assert "marca" in campos
     assert "colecao" in campos
     assert sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"])) is None
+
+
+@pytest.mark.parametrize(('quantidade', 'status'), [(7, 'normal'), (0, 'esgotado'), (None, 'normal')])
+def teste_revisao_publica_quantidade_e_disponibilidade(admin_logado, sessao, fila_de_teste, quantidade, status):
+    resposta = admin_logado.post(ROTA, json={
+        'productId': ALBUM_TESTE['id'], 'status': 'approved',
+        'marca': 'Marca Estoque', 'colecao': 'masculino',
+        'quantidadeDisponivel': quantidade, 'statusProduto': status,
+    })
+    assert resposta.status_code == 200
+    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE['id']))
+    assert produto.quantidade_disponivel == quantidade
+    assert produto.status == status
+    publico = admin_logado.get(f'/api/v1/produtos/{produto.codigo}').json()
+    assert publico['quantidadeDisponivel'] == quantidade
+    assert publico['status'] == status
+
+
+@pytest.mark.parametrize('quantidade', [-1, 1.5, True, '3', 2147483648])
+def teste_revisao_recusa_quantidade_invalida(admin_logado, sessao, fila_de_teste, quantidade):
+    resposta = admin_logado.post(ROTA, json={
+        'productId': ALBUM_TESTE['id'], 'status': 'approved',
+        'marca': 'Marca Estoque', 'colecao': 'masculino', 'quantidadeDisponivel': quantidade,
+    })
+    assert resposta.status_code == 400
+    assert sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE['id'])) is None
 
 
 def teste_aprovar_cria_produto_real_navegavel(admin_logado, sessao, fila_de_teste):

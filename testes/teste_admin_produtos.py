@@ -13,7 +13,6 @@ from sqlalchemy import func, select
 from testes.fabrica import criar_categoria, criar_marca, criar_produto
 from vip_api.modelos.catalogo import Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import CarrinhoItem
-from vip_api.modelos.selecao import SelecaoItem
 
 ROTA = "/api/v1/admin/produtos"
 
@@ -50,6 +49,38 @@ def teste_criar_com_codigo_informado(admin_logado, marca_e_categoria):
     assert corpo["codigo"] == "CHN-9001"
     assert corpo["status"] == "normal"
     assert corpo["publicos"] == ["feminino"]
+
+
+def teste_quantidade_criar_editar_listar_e_limpar(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json={
+        'nome': 'Produto com quantidade', 'marcaId': marca.id, 'categoriaId': categoria.id,
+        'publicos': ['masculino'], 'quantidadeDisponivel': 8, 'destaque': True,
+    })
+    assert resposta.status_code == 201
+    produto = resposta.json()
+    assert produto['quantidadeDisponivel'] == 8
+    rota = f"{ROTA}/{produto['id']}"
+    # PATCH de outro campo preserva a quantidade.
+    assert admin_logado.patch(rota, json={'nome': 'Nome atualizado'}).json()['quantidadeDisponivel'] == 8
+    assert admin_logado.get(f"/api/v1/produtos/{produto['codigo']}").json()['quantidadeDisponivel'] == 8
+    lista = admin_logado.get('/api/v1/produtos', params={'busca': produto['codigo']}).json()['dados']
+    assert lista[0]['quantidadeDisponivel'] == 8
+    lista_admin = admin_logado.get(ROTA, params={'busca': produto['codigo']}).json()['dados']
+    assert lista_admin[0]['quantidadeDisponivel'] == 8
+    assert admin_logado.patch(rota, json={'quantidadeDisponivel': 0, 'status': 'esgotado'}).json()['quantidadeDisponivel'] == 0
+    assert admin_logado.get(f"/api/v1/produtos/{produto['codigo']}").json()['status'] == 'esgotado'
+    assert admin_logado.patch(rota, json={'quantidadeDisponivel': None}).json()['quantidadeDisponivel'] is None
+
+
+@pytest.mark.parametrize('quantidade', [-1, 2.5, True, '8', 2147483648])
+def teste_produto_recusa_quantidade_invalida(admin_logado, marca_e_categoria, quantidade):
+    marca, categoria = marca_e_categoria
+    corpo = {'nome': 'Produto', 'marcaId': marca.id, 'categoriaId': categoria.id, 'publicos': ['feminino']}
+    assert admin_logado.post(ROTA, json={**corpo, 'quantidadeDisponivel': quantidade}).status_code == 400
+    novo = admin_logado.post(ROTA, json={**corpo, 'quantidadeDisponivel': 3}).json()
+    assert admin_logado.patch(f"{ROTA}/{novo['id']}", json={'quantidadeDisponivel': quantidade}).status_code == 400
+    assert admin_logado.get(f"{ROTA}/{novo['id']}").json()['quantidadeDisponivel'] == 3
 
 
 def teste_criar_sem_codigo_gera_no_padrao_da_marca(admin_logado, marca_e_categoria):
@@ -247,11 +278,10 @@ def teste_editar_produto_inexistente_responde_404(admin_logado):
 # ======================================================================
 
 
-def teste_excluir_leva_o_carrinho_e_preserva_a_selecao(
+def teste_excluir_leva_o_carrinho(
     admin_logado, cliente_logado, sessao, produto_com_variacoes
 ):
-    """O item do carrinho é dado VIVO e some com o produto; a linha da seleção
-    é histórico CONGELADO e fica, com `produto_id` nulo e o texto intacto."""
+    """Excluir o produto remove também o item do carrinho em andamento."""
     produto = produto_com_variacoes
     tamanho = sessao.scalar(
         select(ProdutoVariacao.id).where(
@@ -267,31 +297,18 @@ def teste_excluir_leva_o_carrinho_e_preserva_a_selecao(
         "/api/v1/carrinho",
         json={"produtoId": produto.id, "variacaoTamanhoId": tamanho, "variacaoCorId": cor},
     )
-    assert cliente_logado.post("/api/v1/selecoes").status_code == 201
+    assert cliente_logado.post("/api/v1/selecoes").status_code == 200
 
     antes_carrinho = sessao.scalar(
         select(CarrinhoItem.id).where(CarrinhoItem.produto_id == produto.id)
     )
-    antes_selecao = sessao.scalar(
-        select(SelecaoItem.id).where(SelecaoItem.produto_id == produto.id)
-    )
-    assert antes_carrinho is not None and antes_selecao is not None
-
+    assert antes_carrinho is not None
     resposta = admin_logado.delete(f"{ROTA}/{produto.id}")
     assert resposta.status_code == 200
 
     sessao.expire_all()
     assert sessao.get(Produto, produto.id) is None
     assert sessao.scalar(select(CarrinhoItem.id).where(CarrinhoItem.id == antes_carrinho)) is None
-
-    item = sessao.get(SelecaoItem, antes_selecao)
-    assert item is not None
-    assert item.produto_id is None
-    assert item.produto_codigo == "TST-PAR"
-    assert item.produto_nome == "Bolsa Clássica Chanel"
-    assert item.variacao_tamanho == "M"
-    assert item.variacao_cor == "Preto"
-
 
 def teste_excluir_leva_imagens_e_variacoes(admin_logado, sessao, produto_com_variacoes):
     produto_id = produto_com_variacoes.id

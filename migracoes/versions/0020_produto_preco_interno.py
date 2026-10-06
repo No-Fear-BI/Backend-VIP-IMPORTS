@@ -5,15 +5,15 @@ só para ele consultar. A loja continua sem preço: o campo existe só nos esque
 `testes/teste_preco_nao_vaza.py` falha se ele aparecer em resposta pública.
 Centavos inteiros (R$ 1.234,50 = 123450), opcional, de 0 a R$ 100.000,00. Produto existente fica sem preço.
 
-Revisão: 0018_produto_preco_interno
-Anterior: 0017_produto_em_novidades
+Revisão: 0020_produto_preco_interno
+Anterior: 0019_sem_historico_pedidos
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0018_produto_preco_interno"
-down_revision = "0017_produto_em_novidades"
+revision = "0020_produto_preco_interno"
+down_revision = "0019_sem_historico_pedidos"
 branch_labels = None
 depends_on = None
 

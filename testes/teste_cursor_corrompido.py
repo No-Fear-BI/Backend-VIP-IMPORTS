@@ -19,11 +19,3 @@ def teste_catalogo_recusa_cursor_corrompido(sem_sessao, nome):
 
     assert resposta.status_code == 400
     assert resposta.json()["erro"]["codigo"] == "CURSOR_INVALIDO"
-
-
-@pytest.mark.parametrize("nome", sorted(QUEBRADOS))
-def teste_historico_de_selecoes_recusa_cursor_corrompido(cliente_logado, nome):
-    resposta = cliente_logado.get("/api/v1/selecoes", params={"cursor": QUEBRADOS[nome]})
-
-    assert resposta.status_code == 400
-    assert resposta.json()["erro"]["codigo"] == "CURSOR_INVALIDO"
