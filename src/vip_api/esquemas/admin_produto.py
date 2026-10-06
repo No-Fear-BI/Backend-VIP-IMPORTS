@@ -23,6 +23,9 @@ StatusProduto = Literal["normal", "esgotado", "oculto"]
 # uma seleção de "todos" tentaria carregar 11 mil ids numa requisição.
 LIMITE_LOTE = 100
 
+# Teto do preço interno: R$ 100.000,00. Barra erro de digitação (vírgula esquecida), não é regra de negócio.
+PRECO_MAXIMO_CENTAVOS = 10_000_000
+
 _LINK_HTTP = re.compile(r"^https?://\S+$", re.IGNORECASE)
 
 
@@ -50,6 +53,8 @@ class ProdutoAdminItem(EsquemaResposta):
     destaque: bool
     em_novidades: bool
     origem_url: str | None = None
+    # Só do painel (consulta do dono): nunca existe em esquema público.
+    preco_centavos: int | None = None
     marca: Referencia
     categoria: Referencia
     colecao: Referencia
@@ -96,6 +101,7 @@ class ProdutoAdminDetalhe(EsquemaResposta):
     colecao: Referencia
     # De onde a peça veio (álbum do fornecedor); `None` se não foi registrado.
     origem_url: str | None = None
+    preco_centavos: int | None = None
     imagens: list[ImagemDetalhe]
     variacoes: list[VariacaoAdmin]
     criado_em: datetime
@@ -119,6 +125,8 @@ class ProdutoCriar(EsquemaEntrada):
     publicos: list[Literal["feminino", "masculino"]] = Field(min_length=1, max_length=2)
     # Opcional: link de onde a peça veio, para a equipe voltar à fonte depois.
     origem_url: str | None = None
+    # Opcional. Centavos inteiros, de 0 a PRECO_MAXIMO_CENTAVOS.
+    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
 
     _origem_url = field_validator("origem_url")(_limpar_origem_url)
 
@@ -142,6 +150,8 @@ class ProdutoEditar(EsquemaEntrada):
     publicos: list[Literal["feminino", "masculino"]] | None = Field(None, min_length=1, max_length=2)
     # `null` ou "" apaga o link.
     origem_url: str | None = None
+    # `null` apaga o preço (produto sem preço continua válido).
+    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
 
     _origem_url = field_validator("origem_url")(_limpar_origem_url)
 

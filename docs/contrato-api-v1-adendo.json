@@ -21,6 +21,11 @@
   "camposDeResposta": [
     {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"variacoes[].corId","descricao":"Id da cor na paleta (null em tamanho). A tela reenvia a grade com este id, porque o texto deixa de casar com o slug depois de uma renomeação.","origem":"revisão 0007"},
     {"metodo":"PATCH","rota":"/admin/produtos/{produtoId}/variacoes","campo":"[].corId","descricao":"O mesmo campo, na grade devolvida depois de gravar.","origem":"revisão 0007"},
-    {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"origemUrl","descricao":"Link de onde a peça veio (álbum do fornecedor), ou null. A revisão preenche ao aprovar; o painel também aceita em POST e PATCH (http/https; \"\" ou null no PATCH apaga).","origem":"pedido de 02/10/2026"}
+    {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"origemUrl","descricao":"Link de onde a peça veio (álbum do fornecedor), ou null. A revisão preenche ao aprovar; o painel também aceita em POST e PATCH (http/https; \"\" ou null no PATCH apaga).","origem":"pedido de 02/10/2026"},
+    {"metodo":"GET","rota":"/admin/produtos","campo":"dados[].precoCentavos","descricao":"Preço INTERNO do dono, em centavos de real (123450 = R$ 1.234,50), ou null. SÓ DE ADMIN: nunca existe em rota pública (testes/teste_preco_nao_vaza.py). Opcional; de 0 a 10000000.","origem":"revisão 0018, pedido de 06/10/2026"},
+    {"metodo":"GET","rota":"/admin/produtos/{produtoId}","campo":"precoCentavos","descricao":"Preço INTERNO do dono, em centavos de real (123450 = R$ 1.234,50), ou null. SÓ DE ADMIN: nunca existe em rota pública (testes/teste_preco_nao_vaza.py). Opcional; de 0 a 10000000.","origem":"revisão 0018, pedido de 06/10/2026"},
+    {"metodo":"POST","rota":"/admin/produtos","campo":"precoCentavos (corpo)","descricao":"Opcional. Inteiro 0..10000000, senão 400 em campos.precoCentavos. Só de admin.","origem":"revisão 0018, pedido de 06/10/2026"},
+    {"metodo":"PATCH","rota":"/admin/produtos/{produtoId}","campo":"precoCentavos (corpo)","descricao":"Parcial: ausente não mexe, null apaga. Inteiro 0..10000000. Só de admin.","origem":"revisão 0018, pedido de 06/10/2026"},
+    {"metodo":"POST","rota":"/admin/revisao","campo":"precoCentavos (corpo)","descricao":"Opcional ao aprovar (status approved); sem ele a aprovação segue normal e o produto fica sem preço. Inteiro 0..10000000. Só de admin.","origem":"revisão 0018, pedido de 06/10/2026"}
   ]
 }

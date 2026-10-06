@@ -151,6 +151,10 @@ class Produto(Base):
         ),
         # Todo produto é de pelo menos um público (feminino, masculino ou os dois).
         CheckConstraint("feminino OR masculino", name="ck_produtos_publico"),
+        CheckConstraint(
+            "preco_centavos IS NULL OR (preco_centavos >= 0 AND preco_centavos <= 10000000)",
+            name="ck_produtos_preco_centavos",
+        ),
         # Os índices abaixo são a espinha dorsal da paginação por cursor:
         # coluna de filtro à esquerda, par de ordenação à direita. O DESC faz
         # parte da definição — sem ele o índice não serve à ordenação
@@ -258,6 +262,9 @@ class Produto(Base):
     # Fora da página Novidades quando falso (0017); a janela de 14 dias vale além disso.
     em_novidades: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     destaque_ordem: Mapped[int | None] = mapped_column(Integer)
+    # Preço de consulta INTERNA do dono, em centavos de real (0018). Só o painel lê e grava;
+    # nenhum esquema público pode ter este campo (testes/teste_preco_nao_vaza.py).
+    preco_centavos: Mapped[int | None] = mapped_column(Integer)
     marca_id: Mapped[int] = mapped_column(Integer)
     categoria_id: Mapped[int] = mapped_column(Integer)
     # Público do produto (0015). As duas marcadas = unissex.
