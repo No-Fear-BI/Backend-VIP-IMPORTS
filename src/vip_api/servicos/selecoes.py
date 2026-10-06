@@ -1,35 +1,20 @@
-"""Envio da seleção por WhatsApp e histórico do cliente.
+"""Gera a mensagem do WhatsApp em memória, sem registrar pedidos."""
 
-Não usa API do WhatsApp e não tem custo: a resposta traz um link `wa.me` que
-o navegador abre com o texto já preenchido.
-"""
-
-from datetime import datetime
 from urllib.parse import quote
 
-from sqlalchemy import and_, func, select, tuple_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session, aliased
 
 from vip_api.configuracao import configuracao
-from vip_api.erros.codigos import CARRINHO_VAZIO, CURSOR_INVALIDO
+from vip_api.erros.codigos import CARRINHO_VAZIO
 from vip_api.erros.excecoes import AppError
-from vip_api.esquemas.base import (
-    Pagina,
-    Paginacao,
-    codificar_cursor,
-    decodificar_cursor,
-    exigir_formato_do_cursor,
-)
-from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoResumo, SelecaoSaida
+from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoSaida
 from vip_api.modelos.catalogo import Categoria, Marca, Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente
-from vip_api.modelos.selecao import Selecao, SelecaoItem
 from vip_api.servicos.colecoes import nome_da_colecao
 
 SAUDACAO = "Olá! Tenho interesse nestes itens:"
 ASSINATURA = "Enviado pelo site."
-POR_PAGINA_PADRAO = 20
-POR_PAGINA_MAXIMO = 50
 
 _Tamanho = aliased(ProdutoVariacao, name="v_tamanho")
 _Cor = aliased(ProdutoVariacao, name="v_cor")
@@ -67,7 +52,7 @@ def montar_link(mensagem: str) -> str:
     return f"https://wa.me/{configuracao.WHATSAPP_LOJA}?text={quote(mensagem, safe='')}"
 
 
-def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
+def _itens_do_carrinho(sessao: Session, cliente_id: int):
     return sessao.execute(
         select(
             Produto.id.label("produto_id"),
@@ -100,48 +85,13 @@ def _itens_do_carrinho_para_congelar(sessao: Session, cliente_id: int):
 
 
 def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
-    linhas = _itens_do_carrinho_para_congelar(sessao, cliente.id)
+    linhas = _itens_do_carrinho(sessao, cliente.id)
     if not linhas:
         raise AppError(
             codigo=CARRINHO_VAZIO,
             mensagem="Sua seleção está vazia. Adicione produtos antes de enviar.",
             status_code=400,
         )
-
-    selecao = Selecao(
-        cliente_id=cliente.id,
-        # Dados do cliente também congelados: se o cadastro sumir, o
-        # atendimento ainda sabe com quem estava falando.
-        cliente_nome=cliente.nome,
-        cliente_email=cliente.email,
-        cliente_telefone=cliente.telefone,
-        total_itens=len(linhas),
-    )
-    sessao.add(selecao)
-    sessao.flush()
-
-    for ordem, linha in enumerate(linhas, start=1):
-        # TEXTO copiado agora, não JOIN na leitura: se o produto for renomeado
-        # ou excluído depois, o painel continua mostrando o que o cliente viu.
-        # `produto_id` fica só como referência, nulável e sem cascata.
-        sessao.add(
-            SelecaoItem(
-                selecao_id=selecao.id,
-                produto_id=linha.produto_id,
-                produto_codigo=linha.codigo,
-                produto_nome=linha.nome,
-                marca_nome=linha.marca_nome,
-                categoria_nome=linha.categoria_nome,
-                colecao_nome=linha.colecao_nome,
-                imagem_url=linha.imagem_url,
-                variacao_tamanho=linha.variacao_tamanho,
-                variacao_cor=linha.variacao_cor,
-                ordem=ordem,
-            )
-        )
-
-    sessao.commit()
-    sessao.refresh(selecao)
 
     itens = [
         SelecaoItemSaida(
@@ -154,115 +104,8 @@ def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
     ]
     mensagem = montar_mensagem(itens)
 
-    # O carrinho NÃO é esvaziado aqui, de propósito: se a pessoa abrir o link
-    # e fechar o WhatsApp sem mandar nada, esvaziar teria destruído a seleção
-    # dela. Duas seleções parecidas no painel é ruído; carrinho perdido é
-    # venda perdida.
     return SelecaoSaida(
-        id=selecao.id,
-        criado_em=selecao.criado_em,
         itens=itens,
         mensagem_whatsapp=mensagem,
         link_whatsapp=montar_link(mensagem),
-    )
-
-
-def listar_selecoes(
-    sessao: Session, cliente_id: int, cursor: str | None, por_pagina: int
-) -> Pagina[SelecaoResumo]:
-    por_pagina = max(1, min(por_pagina, POR_PAGINA_MAXIMO))
-
-    dados_cursor = None
-    if cursor:
-        dados_cursor = exigir_formato_do_cursor(
-            decodificar_cursor(cursor), texto=("v",), inteiros=("id", "t")
-        )
-        if {"v", "id"} - dados_cursor.keys():
-            raise AppError(
-                codigo=CURSOR_INVALIDO,
-                mensagem="O cursor de paginação informado é inválido.",
-                status_code=400,
-            )
-
-    consulta = select(Selecao.id, Selecao.criado_em, Selecao.total_itens).where(
-        Selecao.cliente_id == cliente_id
-    )
-
-    if dados_cursor is None:
-        total = (
-            sessao.scalar(
-                select(func.count()).select_from(Selecao).where(Selecao.cliente_id == cliente_id)
-            )
-            or 0
-        )
-    else:
-        total = int(dados_cursor.get("t", 0))
-        try:
-            marca_tempo = datetime.fromisoformat(str(dados_cursor["v"]))
-        except ValueError as exc:
-            raise AppError(
-                codigo=CURSOR_INVALIDO,
-                mensagem="O cursor de paginação informado é inválido.",
-                status_code=400,
-            ) from exc
-        # Comparação de tupla, igual à do catálogo: é ela que impede item
-        # repetido quando duas seleções têm o mesmo criado_em.
-        consulta = consulta.where(
-            tuple_(Selecao.criado_em, Selecao.id)
-            < tuple_(marca_tempo, int(dados_cursor["id"]))
-        )
-
-    linhas = sessao.execute(
-        consulta.order_by(Selecao.criado_em.desc(), Selecao.id.desc()).limit(por_pagina + 1)
-    ).all()
-
-    tem_proxima = len(linhas) > por_pagina
-    linhas = linhas[:por_pagina]
-
-    # Os itens de TODAS as seleções da página numa consulta só — o N+1 aqui
-    # seria uma consulta por seleção listada.
-    ids = [linha.id for linha in linhas]
-    itens_por_selecao: dict[int, list[SelecaoItemSaida]] = {i: [] for i in ids}
-    if ids:
-        for item in sessao.execute(
-            select(
-                SelecaoItem.selecao_id,
-                SelecaoItem.produto_codigo,
-                SelecaoItem.produto_nome,
-                SelecaoItem.marca_nome,
-                SelecaoItem.variacao_tamanho,
-                SelecaoItem.variacao_cor,
-            )
-            .where(SelecaoItem.selecao_id.in_(ids))
-            .order_by(SelecaoItem.selecao_id, SelecaoItem.ordem, SelecaoItem.id)
-        ).all():
-            itens_por_selecao[item.selecao_id].append(
-                SelecaoItemSaida(
-                    codigo=item.produto_codigo,
-                    nome=item.produto_nome,
-                    marca=item.marca_nome,
-                    variacao=rotulo_variacao(item.variacao_tamanho, item.variacao_cor),
-                )
-            )
-
-    proximo_cursor = None
-    if tem_proxima and linhas:
-        ultima = linhas[-1]
-        proximo_cursor = codificar_cursor(
-            {"v": ultima.criado_em.isoformat(), "id": ultima.id, "t": total}
-        )
-
-    return Pagina[SelecaoResumo](
-        dados=[
-            SelecaoResumo(
-                id=linha.id,
-                criado_em=linha.criado_em,
-                total_itens=linha.total_itens,
-                itens=itens_por_selecao[linha.id],
-            )
-            for linha in linhas
-        ],
-        paginacao=Paginacao(
-            total=total, por_pagina=por_pagina, proximo_cursor=proximo_cursor
-        ),
     )

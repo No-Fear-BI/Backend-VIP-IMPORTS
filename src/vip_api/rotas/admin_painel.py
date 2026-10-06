@@ -34,7 +34,6 @@ from vip_api.rotas.admin_relatorios import (
     roteador_clientes,
     roteador_destaques,
     roteador_resumo,
-    roteador_selecoes,
 )
 from vip_api.rotas.admin_produtos import roteador as roteador_produtos
 from vip_api.rotas.admin_revisao import roteador as roteador_revisao
@@ -51,7 +50,6 @@ roteador.include_router(roteador_categorias)
 roteador.include_router(roteador_banners)
 roteador.include_router(roteador_destaques)
 roteador.include_router(roteador_resumo)
-roteador.include_router(roteador_selecoes)
 roteador.include_router(roteador_clientes)
 roteador.include_router(roteador_revisao)
 # Controle de entrada da loja (seção 05). Aqui, no grupo protegido — e só

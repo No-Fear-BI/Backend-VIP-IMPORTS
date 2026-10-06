@@ -13,7 +13,6 @@ from sqlalchemy import func, select
 from testes.fabrica import criar_categoria, criar_marca, criar_produto
 from vip_api.modelos.catalogo import Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import CarrinhoItem
-from vip_api.modelos.selecao import SelecaoItem
 
 ROTA = "/api/v1/admin/produtos"
 
@@ -279,11 +278,10 @@ def teste_editar_produto_inexistente_responde_404(admin_logado):
 # ======================================================================
 
 
-def teste_excluir_leva_o_carrinho_e_preserva_a_selecao(
+def teste_excluir_leva_o_carrinho(
     admin_logado, cliente_logado, sessao, produto_com_variacoes
 ):
-    """O item do carrinho é dado VIVO e some com o produto; a linha da seleção
-    é histórico CONGELADO e fica, com `produto_id` nulo e o texto intacto."""
+    """Excluir o produto remove também o item do carrinho em andamento."""
     produto = produto_com_variacoes
     tamanho = sessao.scalar(
         select(ProdutoVariacao.id).where(
@@ -299,31 +297,18 @@ def teste_excluir_leva_o_carrinho_e_preserva_a_selecao(
         "/api/v1/carrinho",
         json={"produtoId": produto.id, "variacaoTamanhoId": tamanho, "variacaoCorId": cor},
     )
-    assert cliente_logado.post("/api/v1/selecoes").status_code == 201
+    assert cliente_logado.post("/api/v1/selecoes").status_code == 200
 
     antes_carrinho = sessao.scalar(
         select(CarrinhoItem.id).where(CarrinhoItem.produto_id == produto.id)
     )
-    antes_selecao = sessao.scalar(
-        select(SelecaoItem.id).where(SelecaoItem.produto_id == produto.id)
-    )
-    assert antes_carrinho is not None and antes_selecao is not None
-
+    assert antes_carrinho is not None
     resposta = admin_logado.delete(f"{ROTA}/{produto.id}")
     assert resposta.status_code == 200
 
     sessao.expire_all()
     assert sessao.get(Produto, produto.id) is None
     assert sessao.scalar(select(CarrinhoItem.id).where(CarrinhoItem.id == antes_carrinho)) is None
-
-    item = sessao.get(SelecaoItem, antes_selecao)
-    assert item is not None
-    assert item.produto_id is None
-    assert item.produto_codigo == "TST-PAR"
-    assert item.produto_nome == "Bolsa Clássica Chanel"
-    assert item.variacao_tamanho == "M"
-    assert item.variacao_cor == "Preto"
-
 
 def teste_excluir_leva_imagens_e_variacoes(admin_logado, sessao, produto_com_variacoes):
     produto_id = produto_com_variacoes.id

@@ -15,9 +15,7 @@ metade):
   1. `DELETE FROM produtos WHERE origem_url = 'gerar_massa'` — o carimbo que
      só `gerar_massa.py` escreve (ver o cabeçalho de lá). Cascata cuida do
      resto sozinha: `produto_imagens`, `produto_variacoes`, `carrinho_itens`
-     e `favoritos` são ON DELETE CASCADE; `selecao_itens.produto_id` é ON
-     DELETE SET NULL (histórico de seleção enviada não desaparece com o
-     produto — é dado vivo do cliente, não sintético).
+     e `favoritos` são ON DELETE CASCADE.
   2. Marca sem NENHUM produto (sintético ou real — depois do passo 1, "sem
      produto" só pode significar isso) E cujo slug não está na taxonomia
      real (`scripts/semear_taxonomia_real.py`, mesma fonte da semeadura) é

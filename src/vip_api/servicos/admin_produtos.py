@@ -581,10 +581,7 @@ def editar_produto(
 
 
 def excluir_produto(sessao: Session, produto_id: int) -> None:
-    """Imagens, variações, favoritos e itens de carrinho somem junto;
-    `selecao_itens` fica, com `produto_id` nulo e o texto congelado intacto,
-    porque é o histórico do que o cliente enviou e não pode depender de o
-    produto ainda existir.
+    """Imagens, variações, favoritos e itens de carrinho somem junto.
 
     AS VARIAÇÕES SAEM PRIMEIRO, por `remover_variacoes` — a mesma porta que a
     substituição do conjunto usa. Apagar o produto apagaria as variações pela
