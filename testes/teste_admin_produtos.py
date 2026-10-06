@@ -550,3 +550,82 @@ def teste_total_da_busca_respeita_o_termo(admin_logado, sessao, marca_e_categori
 
     assert corpo["paginacao"]["total"] == 3
     assert len(corpo["dados"]) == 3
+
+
+# ======================================================================
+# Preço interno (só do painel, em centavos) — opcional, de 0 a R$ 100.000,00
+# ======================================================================
+
+
+def _corpo_novo(marca, categoria, **extra):
+    return {"nome": "Bolsa com Preço", "marcaId": marca.id, "categoriaId": categoria.id, "publicos": ["feminino"], **extra}
+
+
+def teste_criar_sem_preco_guarda_vazio(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria))
+    assert resposta.status_code == 201
+    assert resposta.json()["precoCentavos"] is None
+
+
+def teste_criar_com_preco_valido(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=123450))
+    assert resposta.status_code == 201
+    assert resposta.json()["precoCentavos"] == 123450
+
+
+def teste_criar_com_preco_zero_e_aceito(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=0))
+    assert resposta.status_code == 201
+    assert resposta.json()["precoCentavos"] == 0
+
+
+@pytest.mark.parametrize("invalido", [-1, -5000, 10_000_001, "abc", 12.5])
+def teste_criar_com_preco_invalido_da_400(admin_logado, marca_e_categoria, invalido):
+    marca, categoria = marca_e_categoria
+    resposta = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=invalido))
+    assert resposta.status_code == 400
+    assert "precoCentavos" in resposta.json()["erro"]["campos"]
+
+
+def teste_editar_preco_e_apagar_com_null(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    criado = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria)).json()
+    url = f"{ROTA}/{criado['id']}"
+
+    editado = admin_logado.patch(url, json={"precoCentavos": 99900})
+    assert editado.status_code == 200
+    assert editado.json()["precoCentavos"] == 99900
+
+    # PATCH sem o campo não mexe no preço.
+    admin_logado.patch(url, json={"nome": "Outro nome"})
+    assert admin_logado.get(url).json()["precoCentavos"] == 99900
+
+    apagado = admin_logado.patch(url, json={"precoCentavos": None})
+    assert apagado.status_code == 200
+    assert apagado.json()["precoCentavos"] is None
+
+
+def teste_editar_com_preco_negativo_da_400_e_nao_altera(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    criado = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=5000)).json()
+    resposta = admin_logado.patch(f"{ROTA}/{criado['id']}", json={"precoCentavos": -100})
+    assert resposta.status_code == 400
+    assert admin_logado.get(f"{ROTA}/{criado['id']}").json()["precoCentavos"] == 5000
+
+
+def teste_listagem_do_painel_traz_o_preco(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=45000))
+    dados = admin_logado.get(ROTA).json()["dados"]
+    assert dados[0]["precoCentavos"] == 45000
+
+
+def teste_duplicar_leva_o_preco(admin_logado, marca_e_categoria):
+    marca, categoria = marca_e_categoria
+    criado = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=45000)).json()
+    copia = admin_logado.post(f"{ROTA}/{criado['id']}/duplicar")
+    assert copia.status_code == 201
+    assert copia.json()["precoCentavos"] == 45000

@@ -340,7 +340,7 @@ Com isso o banco **garante** que o `colecao_id` do produto é sempre o mesmo da 
 
 **Sobre `relacionados`.** `GET /produtos/:codigo/relacionados` não tem tabela. É consulta derivada — mesma categoria, preferindo a mesma marca, excluindo o próprio produto e os ocultos, com limite. Decisão em 6.7.
 
-**Sobre preço.** Não existe. Nenhuma coluna de valor, custo, moeda, desconto, faixa ou "a partir de". Se numa revisão futura aparecer uma, o desenho está errado.
+**Sobre preço.** A LOJA não tem preço: nenhuma resposta pública, filtro, ordenação ou mensagem de WhatsApp o carrega. Exceção decidida em 06/10/2026 (revisão 0018): `produtos.preco_centavos` (inteiro, opcional, 0 a 10.000.000) é um dado INTERNO do dono, lido e gravado só pelas rotas de `/admin`. Nenhum esquema público pode ter o campo — `testes/teste_preco_nao_vaza.py` garante. Continua sem moeda, desconto, faixa ou "a partir de"; e o preço nunca é congelado na seleção enviada.
 
 **Sobre `GET /admin/produtos`.** Decidido: inclui produtos `oculto` por padrão (é o que a seção 4.2 do contrato descreve), com filtro de `status` opcional para quem quiser restringir. A alteração em lote (`POST /admin/produtos/lote`) aceita exatamente quatro campos — `status`, `destaque`, `marca_id`, `categoria_id` — e nenhum outro. Nenhuma coluna nova decorre disso: os quatro já existem e já são a coluna mais à esquerda de algum índice (5.3).
 

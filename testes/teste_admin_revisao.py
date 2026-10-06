@@ -276,3 +276,33 @@ def teste_rota_produtos_aprovados_publica_nao_existe_mais(sem_sessao):
     sem exigir sessão — removida: produto aprovado agora é produto de
     verdade, visível pelo catálogo público normal."""
     assert sem_sessao.get("/api/v1/produtos-aprovados").status_code == 404
+
+
+def _aprovar(admin_logado, **extra):
+    return admin_logado.post(
+        ROTA,
+        json={"productId": ALBUM_TESTE["id"], "status": "approved", "marca": "Nike Teste", "colecao": "feminino", **extra},
+    )
+
+
+def teste_aprovar_sem_preco_funciona_e_fica_vazio(admin_logado, sessao, fila_de_teste):
+    assert _aprovar(admin_logado).status_code == 200
+    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"]))
+    assert produto.preco_centavos is None
+
+
+def teste_aprovar_com_preco_guarda_em_centavos(admin_logado, sessao, fila_de_teste):
+    assert _aprovar(admin_logado, precoCentavos=123450).status_code == 200
+    produto = sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"]))
+    assert produto.preco_centavos == 123450
+    # O painel lê o preço de volta; a rota pública do mesmo produto não.
+    assert admin_logado.get(f"/api/v1/admin/produtos/{produto.id}").json()["precoCentavos"] == 123450
+    assert "recoCentavos" not in admin_logado.get(f"/api/v1/produtos/{produto.codigo}").text
+
+
+@pytest.mark.parametrize("invalido", [-1, 10_000_001])
+def teste_aprovar_com_preco_invalido_da_400_e_nao_cria_produto(admin_logado, sessao, fila_de_teste, invalido):
+    resposta = _aprovar(admin_logado, precoCentavos=invalido)
+    assert resposta.status_code == 400
+    assert sessao.scalar(select(Produto).where(Produto.codigo_origem == ALBUM_TESTE["id"])) is None
+    assert sessao.get(DecisaoRevisao, ALBUM_TESTE["id"]) is None

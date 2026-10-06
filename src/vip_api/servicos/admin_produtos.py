@@ -156,6 +156,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 Produto.destaque,
                 Produto.em_novidades,
                 Produto.origem_url,
+                Produto.preco_centavos,
                 Produto.criado_em,
                 Produto.atualizado_em,
                 Produto.marca_id,
@@ -179,6 +180,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
             interna.c.destaque,
             interna.c.em_novidades,
             interna.c.origem_url,
+            interna.c.preco_centavos,
             interna.c.criado_em,
             interna.c.atualizado_em,
             Marca.nome.label("marca_nome"),
@@ -209,6 +211,7 @@ def listar_produtos(sessao: Session, filtros: FiltrosAdmin) -> Pagina[ProdutoAdm
                 destaque=linha.destaque,
                 em_novidades=linha.em_novidades,
                 origem_url=linha.origem_url,
+                preco_centavos=linha.preco_centavos,
                 marca=Referencia(nome=linha.marca_nome, slug=linha.marca_slug),
                 categoria=Referencia(nome=linha.categoria_nome, slug=linha.categoria_slug),
                 colecao=Referencia(nome=linha.colecao_nome, slug=linha.colecao_slug),
@@ -286,6 +289,7 @@ def obter_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         em_novidades=produto.em_novidades,
         destaque_ordem=produto.destaque_ordem,
         origem_url=produto.origem_url,
+        preco_centavos=produto.preco_centavos,
         marca_id=produto.marca_id,
         categoria_id=produto.categoria_id,
         publicos=publicos(produto.feminino, produto.masculino),
@@ -486,6 +490,7 @@ def criar_produto(sessao: Session, dados: ProdutoCriar) -> ProdutoAdminDetalhe:
         em_novidades=dados.em_novidades,
         destaque_ordem=dados.destaque_ordem,
         origem_url=dados.origem_url,
+        preco_centavos=dados.preco_centavos,
         marca_id=dados.marca_id,
         categoria_id=dados.categoria_id,
         feminino=feminino,
@@ -543,6 +548,8 @@ def editar_produto(
         produto.descricao = dados.descricao
     if "origem_url" in informados:
         produto.origem_url = dados.origem_url
+    if "preco_centavos" in informados:
+        produto.preco_centavos = dados.preco_centavos
     if "status" in informados and dados.status:
         produto.status = dados.status
     if "marca_id" in informados and dados.marca_id is not None:
@@ -616,6 +623,7 @@ def duplicar_produto(sessao: Session, produto_id: int) -> ProdutoAdminDetalhe:
         status="oculto",
         destaque=False,
         destaque_ordem=None,
+        preco_centavos=original.preco_centavos,
         marca_id=original.marca_id,
         categoria_id=original.categoria_id,
         feminino=original.feminino,

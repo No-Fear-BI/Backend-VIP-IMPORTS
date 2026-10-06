@@ -1,7 +1,9 @@
 """Esquemas de saída de produto — formato exato do contrato, seção 02.
 
-Nenhum campo de preço aqui, nem em lugar nenhum do projeto: a loja é catálogo
-e o valor é confirmado no atendimento.
+Nenhum campo de preço aqui, nem em esquema público nenhum: a loja é catálogo e o
+valor é confirmado no atendimento. O preço interno do dono (`preco_centavos`) vive
+SÓ em `esquemas/admin_produto.py`; `testes/teste_preco_nao_vaza.py` reprova se ele
+aparecer numa resposta pública.
 """
 
 from typing import Literal

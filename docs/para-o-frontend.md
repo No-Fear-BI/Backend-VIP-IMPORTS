@@ -303,3 +303,15 @@ Dois endpoints do painel (sessão de admin) para o botão **Atualizar produtos**
 **Sem repetidos:** o script junta os álbuns pelo id (`fornecedor-idDoÁlbum`), então reexecutar não duplica, e `GET /admin/revisao/pendentes` já esconde o que foi aprovado ou reprovado (decisões no PostgreSQL). Quem vem do arquivo e já estava na fila mantém a categoria e a marca sugerida.
 
 O estado fica em `data/sync-yupoo-estado.json` e a trava em `data/sync-yupoo.lock` (os dois fora do git). Uma falha de rede preserva a fila anterior. **Infra:** a imagem da API agora tem Node (`Dockerfile`) e `./data` não é mais somente leitura no compose; em produção é preciso reconstruir a imagem e deixar `data/` gravável.
+
+
+## Preço interno do produto (06/10/2026, revisão 0018) — SÓ DO PAINEL
+
+O dono registra o preço de cada peça **só para consulta própria**. A loja continua sem preço: o campo `precoCentavos` existe **apenas nos esquemas de admin** e não sai em nenhuma rota pública (listagem, detalhe, busca, novidades, home/destaques, favoritos, carrinho, seleção). `testes/teste_preco_nao_vaza.py` varre o OpenAPI de toda rota fora de `/admin` e lê cada rota pública com um produto que tem preço; reprova se o campo aparecer.
+
+- **Formato:** centavos inteiros de real (`123450` = R$ 1.234,50), opcional (`null` = sem preço), de `0` a `10000000` (R$ 100.000,00). Fora disso, 400 com `campos.precoCentavos`.
+- `GET /admin/produtos` (cada linha) e `GET /admin/produtos/{id}` devolvem `precoCentavos`.
+- `POST /admin/produtos` aceita `precoCentavos`; `PATCH /admin/produtos/{id}` também (ausente não mexe, `null` apaga).
+- `POST /admin/revisao` com `status: "approved"` aceita `precoCentavos`; sem ele a aprovação segue e o produto fica sem preço. Valor inválido dá 400 e nada é criado.
+- Duplicar produto copia o preço (a cópia nasce oculta).
+- A fila de revisão (`pending-products.json`) não traz preço do fornecedor; o preço nunca vem de lá.

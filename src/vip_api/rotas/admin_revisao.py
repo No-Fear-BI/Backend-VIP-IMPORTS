@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from vip_api.banco import obter_sessao
 from vip_api.configuracao import configuracao
 from vip_api.erros.excecoes import AppError
+from vip_api.esquemas.admin_produto import PRECO_MAXIMO_CENTAVOS
 from vip_api.modelos.catalogo import Produto
 from vip_api.modelos.revisao import DecisaoRevisao
 from vip_api.servicos.produto_destinos import definir_destinos, validar_destinos, validar_publicos
@@ -137,6 +138,8 @@ class Decisao(BaseModel):
     publicos: list[str] | None = None
     # Entra na página Novidades (por 14 dias) ao aprovar. Padrão: sim.
     emNovidades: bool = True
+    # Preço de consulta interna do dono, em centavos de real. Opcional: sem ele a aprovação segue normal.
+    precoCentavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
     # Fotos do álbum que entram no produto, na ordem final: a primeira é a capa. Sem isto entra só a
     # foto de capa do álbum, como antes.
     fotos: list[str] | None = Field(None, min_length=1, max_length=MAXIMO_FOTOS_POR_PRODUTO)
@@ -227,6 +230,7 @@ def decidir(corpo: Decisao, sessao: Session = Depends(obter_sessao)):
             )
             produto.feminino, produto.masculino = flags
             produto.em_novidades = corpo.emNovidades
+            produto.preco_centavos = corpo.precoCentavos
             if destinos:
                 definir_destinos(sessao, produto, destinos)
         except ValueError as exc:
