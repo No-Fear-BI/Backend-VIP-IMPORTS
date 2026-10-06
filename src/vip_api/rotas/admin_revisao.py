@@ -140,7 +140,7 @@ class Decisao(BaseModel):
     # Entra na página Novidades (por 14 dias) ao aprovar. Padrão: sim.
     emNovidades: bool = True
     # Preço de consulta interna do dono, em centavos de real. Opcional: sem ele a aprovação segue normal.
-    precoCentavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
+    precoCentavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS, strict=True)
     quantidadeDisponivel: int | None = Field(None, ge=0, le=2147483647, strict=True)
     statusProduto: Literal['normal', 'esgotado'] = 'normal'
     # Fotos do álbum que entram no produto, na ordem final: a primeira é a capa. Sem isto entra só a

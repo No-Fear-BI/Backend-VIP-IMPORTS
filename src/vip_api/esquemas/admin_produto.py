@@ -129,7 +129,7 @@ class ProdutoCriar(EsquemaEntrada):
     # Opcional: link de onde a peça veio, para a equipe voltar à fonte depois.
     origem_url: str | None = None
     # Opcional. Centavos inteiros, de 0 a PRECO_MAXIMO_CENTAVOS.
-    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
+    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS, strict=True)
 
     _origem_url = field_validator("origem_url")(_limpar_origem_url)
 
@@ -155,7 +155,7 @@ class ProdutoEditar(EsquemaEntrada):
     # `null` ou "" apaga o link.
     origem_url: str | None = None
     # `null` apaga o preço (produto sem preço continua válido).
-    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS)
+    preco_centavos: int | None = Field(None, ge=0, le=PRECO_MAXIMO_CENTAVOS, strict=True)
 
     _origem_url = field_validator("origem_url")(_limpar_origem_url)
 

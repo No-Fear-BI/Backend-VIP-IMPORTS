@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import DataError
 from starlette.staticfiles import StaticFiles
 
 from vip_api.configuracao import configuracao
@@ -15,6 +16,7 @@ from vip_api.dependencias.acesso import exigir_acesso_liberado
 from vip_api.erros.excecoes import AppError
 from vip_api.erros.manipuladores import (
     tratar_app_error,
+    tratar_erro_de_dados,
     tratar_erro_validacao,
     tratar_excecao_nao_tratada,
 )
@@ -70,6 +72,7 @@ app.mount(
 # MRO da exceção levantada, não o primeiro registrado.
 app.add_exception_handler(AppError, tratar_app_error)
 app.add_exception_handler(RequestValidationError, tratar_erro_validacao)
+app.add_exception_handler(DataError, tratar_erro_de_dados)
 app.add_exception_handler(Exception, tratar_excecao_nao_tratada)
 
 # Todo roteador futuro (produtos, clientes, admin...) entra registrado aqui,

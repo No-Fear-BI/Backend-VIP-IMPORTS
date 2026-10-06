@@ -355,7 +355,7 @@ def teste_aprovar_com_preco_guarda_em_centavos(admin_logado, sessao, fila_de_tes
     assert "recoCentavos" not in admin_logado.get(f"/api/v1/produtos/{produto.codigo}").text
 
 
-@pytest.mark.parametrize("invalido", [-1, 10_000_001])
+@pytest.mark.parametrize("invalido", [-1, 10_000_001, "100", True])
 def teste_aprovar_com_preco_invalido_da_400_e_nao_cria_produto(admin_logado, sessao, fila_de_teste, invalido):
     resposta = _aprovar(admin_logado, precoCentavos=invalido)
     assert resposta.status_code == 400

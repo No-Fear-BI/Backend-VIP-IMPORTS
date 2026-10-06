@@ -599,7 +599,8 @@ def teste_criar_com_preco_zero_e_aceito(admin_logado, marca_e_categoria):
     assert resposta.json()["precoCentavos"] == 0
 
 
-@pytest.mark.parametrize("invalido", [-1, -5000, 10_000_001, "abc", 12.5])
+# "100" e true não podem virar 100 e 1 centavo em silêncio: o preço é inteiro de verdade.
+@pytest.mark.parametrize("invalido", [-1, -5000, 10_000_001, "abc", "100", True, 12.5])
 def teste_criar_com_preco_invalido_da_400(admin_logado, marca_e_categoria, invalido):
     marca, categoria = marca_e_categoria
     resposta = admin_logado.post(ROTA, json=_corpo_novo(marca, categoria, precoCentavos=invalido))

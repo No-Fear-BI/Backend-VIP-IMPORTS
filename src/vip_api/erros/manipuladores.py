@@ -17,6 +17,7 @@ import uuid
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 
 from vip_api.erros.codigos import DADOS_INVALIDOS, ERRO_INTERNO
 from vip_api.erros.excecoes import AppError
@@ -84,6 +85,21 @@ async def tratar_erro_validacao(request: Request, exc: RequestValidationError) -
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content=_envelope(DADOS_INVALIDOS, "Há campos inválidos no envio.", campos),
+    )
+
+
+async def tratar_erro_de_dados(request: Request, exc: DataError) -> JSONResponse:
+    """O banco recusou o DADO enviado (caractere NUL, texto longo demais, número fora da faixa):
+    é erro de quem mandou, não do servidor — 400, não 500. O detalhe vai só para o log."""
+    id_rastreio = uuid.uuid4().hex[:8]
+    logger.warning(
+        "Dado recusado pelo banco [rastreio=%s] em %s %s: %s",
+        id_rastreio, request.method, request.url.path, type(exc.orig).__name__,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content=_envelope(DADOS_INVALIDOS, "Há campos inválidos no envio."),
+        headers={"X-Rastreio": id_rastreio},
     )
 
 
