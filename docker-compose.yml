@@ -63,6 +63,10 @@ services:
       EMAILS_PRE_APROVADOS: ${EMAILS_PRE_APROVADOS:-}
       IMAGENS_DIR: ${IMAGENS_DIR:-./dados/imagens}
       IMAGENS_URL_BASE: ${IMAGENS_URL_BASE:-http://localhost:8000/midia}
+      BURNWOOD_API_KEY: ${BURNWOOD_API_KEY:-}
+      BURNWOOD_API_URL: ${BURNWOOD_API_URL:-https://api.dev.burnwood.com.br}
+      BURNWOOD_CHANNEL_KEY: ${BURNWOOD_CHANNEL_KEY:-}
+      BURNWOOD_WIDGET_URL: ${BURNWOOD_WIDGET_URL:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

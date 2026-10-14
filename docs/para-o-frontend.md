@@ -326,3 +326,18 @@ O dono registra o preço de cada peça **só para consulta própria**. A loja co
 - `POST /admin/revisao` com `status: "approved"` aceita `precoCentavos`; sem ele a aprovação segue e o produto fica sem preço. Valor inválido dá 400 e nada é criado.
 - Duplicar produto copia o preço (a cópia nasce oculta).
 - A fila de revisão (`pending-products.json`) não traz preço do fornecedor; o preço nunca vem de lá.
+
+## Atendimento Burnwood: chat da loja e painel de conversas (14/10/2026)
+
+O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equipe assume a conversa quando quiser. A única configuração é `BURNWOOD_API_KEY`, **só no servidor**. Sem ela o chat fica desligado e nada mais muda.
+
+- `GET /atendimento/widget` — **pública e fora do portão de acesso** (quem espera aprovação também fala com o atendimento). Devolve `{ widgetUrl, chaveCanal }`. A loja carrega `<script src="{widgetUrl}/widget.js" data-burnwood-channel="{chaveCanal}" async>`. Os dois `null` = chat desligado: não carregue nada. A `chaveCanal` (`wk_…`) é pública por desenho; a key (`bwk_…`) nunca sai do backend.
+- `GET|POST /admin/atendimento/<caminho da Burnwood>` — sessão de admin, uma rota por chamada abaixo. Repassa para a Burnwood com a key e o nome de quem está logado (vai para a auditoria da Burnwood). Só passa esta lista; o resto é 404 `ATENDIMENTO_ROTA_NAO_PERMITIDA`:
+  - `GET conversations` (`?limit=`, `state=` repetível, `channel_id`, `q`, `cursor`)
+  - `GET conversations/{id}` e `GET conversations/{id}/messages` (`?after=<id da última>`, `before=`)
+  - `POST conversations/{id}/takeover|reply|pause|resume|return-to-bot|resolve|close` (`reply` com `{"body": "…"}`)
+  - `GET channels`
+- **Sucesso volta o JSON da Burnwood como veio** (snake_case: `available_actions`, `last_message`, `author_type`…), não esquema nosso. Os botões da conversa são exatamente os de `available_actions`: a Burnwood decide o que vale em cada estado.
+- **Erro volta no envelope da API.** 503 `ATENDIMENTO_INDISPONIVEL` = key ausente/recusada ou Burnwood fora do ar. Erros da Burnwood viram o código dela em maiúsculas com mensagem pronta: 409 `CONVERSATION_ASSIGNED` (outra pessoa assumiu), 409 `NOT_CONVERSATION_OWNER` (só quem assumiu responde), 409 `INVALID_TRANSITION`, 429 (muitas requisições).
+- Consulta recomendada pela Burnwood: lista a cada 5 s, conversa aberta a cada 2 s com `after=`, e nada com a aba escondida.
+- **Infra:** a CSP da borda precisa liberar o host do widget em `script-src` e `frame-src`, e a Burnwood precisa ter os domínios do site nos *allowed origins* do canal, senão o chat não aparece.

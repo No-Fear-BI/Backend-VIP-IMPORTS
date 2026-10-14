@@ -24,6 +24,9 @@ dependencies = [
     # File()/Form() usam por baixo. Só o upload de imagem do painel manda
     # corpo multipart; todo o resto da API é JSON puro.
     "python-multipart>=0.0.12,<0.1.0",
+    # Chamadas à Burnwood (atendimento), em servicos/burnwood.py. Já era
+    # dependência de desenvolvimento por causa do TestClient.
+    "httpx>=0.27,<1.0",
 ]
 
 [project.optional-dependencies]

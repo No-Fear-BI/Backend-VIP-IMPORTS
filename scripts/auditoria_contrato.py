@@ -73,6 +73,13 @@ FORA_DO_CONTRATO = {
     ("DELETE", "/admin/revisao"): "fila de revisão do Yupoo; registrada em docs/para-o-frontend.md",
     ("POST", "/admin/revisao/atualizar"): "botão Atualizar produtos (coleta do Yupoo); registrada em docs/para-o-frontend.md",
     ("GET", "/admin/revisao/atualizacao"): "andamento da coleta do Yupoo; registrada em docs/para-o-frontend.md",
+    # Atendimento Burnwood (chat da loja + painel de conversas), 14/10/2026.
+    ("GET", "/atendimento/widget"): "chat Burnwood na loja; registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/conversations"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/conversations/{conversa_id}"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/conversations/{conversa_id}/messages"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/conversations/{conversa_id}/{acao}"): "painel de conversas Burnwood (repasse; ações em servicos/burnwood.py); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/channels"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do
