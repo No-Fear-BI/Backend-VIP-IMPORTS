@@ -75,6 +75,7 @@ FORA_DO_CONTRATO = {
     ("GET", "/admin/revisao/atualizacao"): "andamento da coleta do Yupoo; registrada em docs/para-o-frontend.md",
     # Atendimento Burnwood (chat da loja + painel de conversas), 14/10/2026.
     ("GET", "/atendimento/widget"): "chat Burnwood na loja; registrada em docs/para-o-frontend.md",
+    ("GET", "/burnwood/catalogo"): "consulta do catálogo pelo agente Burnwood (token próprio); registrada em docs/para-o-frontend.md",
     ("GET", "/admin/atendimento/conversations"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
     ("GET", "/admin/atendimento/conversations/{conversa_id}"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
     ("GET", "/admin/atendimento/conversations/{conversa_id}/messages"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",

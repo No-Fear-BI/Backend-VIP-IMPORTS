@@ -60,6 +60,16 @@ class Configuracao(BaseSettings):
     # widget.js (padrão: derivado de BURNWOOD_API_URL em servicos/burnwood.py).
     BURNWOOD_CHANNEL_KEY: str = ""
     BURNWOOD_WIDGET_URL: str = ""
+    # Token que a BURNWOOD manda para consultar o catálogo (GET /burnwood/catalogo).
+    # Gerado por nós, longo e aleatório; vazio = consulta desligada (sempre 401).
+    BURNWOOD_CATALOGO_TOKEN: str = ""
+    # Endereço público da loja, para o link do produto na consulta da Burnwood.
+    # Vazio = a primeira de ORIGENS_PERMITIDAS, que já é o domínio do site.
+    LOJA_URL: str = ""
+
+    @property
+    def url_da_loja(self) -> str:
+        return (self.LOJA_URL or (self.ORIGENS_PERMITIDAS or [""])[0]).rstrip("/")
 
     @field_validator("ORIGENS_PERMITIDAS", "PROXIES_CONFIAVEIS", mode="before")
     @classmethod
@@ -135,6 +145,12 @@ class Configuracao(BaseSettings):
             raise RuntimeError(
                 "BURNWOOD_API_KEY precisa começar com bwk_ (é a key que a "
                 "Burnwood enviou). Deixe vazia para desligar o chat."
+            )
+        # Token curto se adivinha; a consulta devolve preço e estoque reais.
+        if self.BURNWOOD_CATALOGO_TOKEN and len(self.BURNWOOD_CATALOGO_TOKEN) < 32:
+            raise RuntimeError(
+                "BURNWOOD_CATALOGO_TOKEN precisa ter pelo menos 32 caracteres "
+                "(gere com: openssl rand -base64 48). Vazio desliga a consulta."
             )
         return self
 

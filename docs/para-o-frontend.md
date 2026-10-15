@@ -331,7 +331,7 @@ O dono registra o preço de cada peça **só para consulta própria**. A loja co
 
 O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equipe assume a conversa quando quiser. A única configuração é `BURNWOOD_API_KEY`, **só no servidor**. Sem ela o chat fica desligado e nada mais muda.
 
-- `GET /atendimento/widget` — **pública e fora do portão de acesso** (quem espera aprovação também fala com o atendimento). Devolve `{ widgetUrl, chaveCanal }`. A loja carrega `<script src="{widgetUrl}/widget.js" data-burnwood-channel="{chaveCanal}" async>`. Os dois `null` = chat desligado: não carregue nada. A `chaveCanal` (`wk_…`) é pública por desenho; a key (`bwk_…`) nunca sai do backend.
+- `GET /atendimento/widget` — **atrás do portão de acesso**, como o catálogo: só quem foi aprovado conversa com o agente, que consulta o catálogo (decisão de 15/10/2026). Sem acesso liberado volta o 401/403 do portão, e a loja não carrega o chat. Devolve `{ widgetUrl, chaveCanal }`. A loja carrega `<script src="{widgetUrl}/widget.js" data-burnwood-channel="{chaveCanal}" async>`. Os dois `null` = chat desligado: não carregue nada. A `chaveCanal` (`wk_…`) é pública por desenho; a key (`bwk_…`) nunca sai do backend.
 - `GET|POST /admin/atendimento/<caminho da Burnwood>` — sessão de admin, uma rota por chamada abaixo. Repassa para a Burnwood com a key e o nome de quem está logado (vai para a auditoria da Burnwood). Só passa esta lista; o resto é 404 `ATENDIMENTO_ROTA_NAO_PERMITIDA`:
   - `GET conversations` (`?limit=`, `state=` repetível, `channel_id`, `q`, `cursor`)
   - `GET conversations/{id}` e `GET conversations/{id}/messages` (`?after=<id da última>`, `before=`)
@@ -341,3 +341,12 @@ O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equi
 - **Erro volta no envelope da API.** 503 `ATENDIMENTO_INDISPONIVEL` = key ausente/recusada ou Burnwood fora do ar. Erros da Burnwood viram o código dela em maiúsculas com mensagem pronta: 409 `CONVERSATION_ASSIGNED` (outra pessoa assumiu), 409 `NOT_CONVERSATION_OWNER` (só quem assumiu responde), 409 `INVALID_TRANSITION`, 429 (muitas requisições).
 - Consulta recomendada pela Burnwood: lista a cada 5 s, conversa aberta a cada 2 s com `after=`, e nada com a aba escondida.
 - **Infra:** a CSP da borda precisa liberar o host do widget em `script-src` e `frame-src`, e a Burnwood precisa ter os domínios do site nos *allowed origins* do canal, senão o chat não aparece.
+
+### Consulta do catálogo pelo agente (15/10/2026)
+
+`GET /burnwood/catalogo?q=<palavras>&limit=10` — chamada pelo **servidor da Burnwood**, nunca pelo navegador. Sem sessão e fora do portão, protegida por `Authorization: Bearer <BURNWOOD_CATALOGO_TOKEN>` (token nosso, longo e aleatório, só no servidor; vazio = sempre 401). Só leitura.
+
+- **Busca por palavra:** cada palavra de `q` vale um ponto se casar com o nome, a marca, a categoria, um tamanho, uma cor ou uma parte do código; o código inteiro tem prioridade. Os que casam mais palavras vêm primeiro, os disponíveis antes dos esgotados. Produto oculto nunca aparece. `limit` de 1 a 20 (padrão 10). Sem resultado: `{"items": []}`.
+- **Resposta** no formato da Burnwood, campos planos: `sku` (código), `nome`, `marca`, `categoria`, `publico`, `preco` (em reais; `null` = sem preço cadastrado), `disponivel`, `estoque` (`null` = não informado), `tamanhos` e `cores` (só os disponíveis), `link` (`LOJA_URL` ou a primeira de `ORIGENS_PERMITIDAS` + `/produto/<código>`).
+- **Preço:** é a única rota fora do painel com o preço interno, por decisão de 15/10/2026 (o agente informa o preço no chat). A exceção está declarada em `testes/teste_preco_nao_vaza.py`; a loja continua sem preço.
+

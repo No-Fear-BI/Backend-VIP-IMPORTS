@@ -67,6 +67,8 @@ services:
       BURNWOOD_API_URL: ${BURNWOOD_API_URL:-https://api.dev.burnwood.com.br}
       BURNWOOD_CHANNEL_KEY: ${BURNWOOD_CHANNEL_KEY:-}
       BURNWOOD_WIDGET_URL: ${BURNWOOD_WIDGET_URL:-}
+      BURNWOOD_CATALOGO_TOKEN: ${BURNWOOD_CATALOGO_TOKEN:-}
+      LOJA_URL: ${LOJA_URL:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

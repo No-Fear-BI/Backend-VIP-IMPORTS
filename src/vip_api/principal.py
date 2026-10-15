@@ -22,6 +22,7 @@ from vip_api.erros.manipuladores import (
 )
 from vip_api.rotas.acesso import roteador as roteador_acesso
 from vip_api.rotas.atendimento import roteador as roteador_atendimento
+from vip_api.rotas.burnwood_catalogo import roteador as roteador_burnwood_catalogo
 from vip_api.rotas.admin_painel import roteador as roteador_admin_painel
 from vip_api.rotas.admin_sessao import roteador as roteador_admin_sessao
 from vip_api.rotas.carrinho import roteador as roteador_carrinho
@@ -96,9 +97,12 @@ roteador_v1.include_router(roteador_selecoes, dependencies=portao)
 # /acesso/* é por onde o barrado entende o motivo e pede liberação.
 roteador_v1.include_router(roteador_clientes)
 roteador_v1.include_router(roteador_acesso)
-# Chat da loja: fora do portão, para quem espera aprovação também falar com
-# o atendimento (rotas/atendimento.py).
-roteador_v1.include_router(roteador_atendimento)
+# Chat da loja: atrás do portão, como o catálogo — só quem foi aprovado
+# conversa com o agente, que conhece o catálogo (decisão de 15/10/2026).
+roteador_v1.include_router(roteador_atendimento, dependencies=portao)
+# Consulta do catálogo pelo SERVIDOR da Burnwood: sem sessão nem portão,
+# protegida pelo token próprio (rotas/burnwood_catalogo.py).
+roteador_v1.include_router(roteador_burnwood_catalogo)
 # Login e logout ficam FORA do roteador protegido: exigir sessão de admin
 # para abrir a sessão de admin trancaria o painel para quem tem a senha
 # certa. São as duas únicas rotas /admin sem proteção, e a exceção está

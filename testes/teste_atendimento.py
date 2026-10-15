@@ -243,12 +243,13 @@ def teste_widget_desligado_com_burnwood_fora_do_ar(sem_sessao, falsa):
     assert resposta.json() == {"widgetUrl": None, "chaveCanal": None}
 
 
-def teste_widget_fica_fora_do_portao(sem_sessao, sessao, falsa):
-    """Loja fechada: quem ainda não entrou também vê o chat."""
+def teste_widget_fica_atras_do_portao(sem_sessao, sessao, falsa):
+    """Loja fechada: quem ainda não entrou não recebe o chat (o agente conhece o catálogo)."""
     sessao.get(AcessoConfig, 1).modo = "aprovacao"
     sessao.commit()
-    assert sem_sessao.get("/api/v1/home").status_code == 401
-    assert sem_sessao.get("/api/v1/atendimento/widget").json()["chaveCanal"] == "wk_com_agente"
+    resposta = sem_sessao.get("/api/v1/atendimento/widget")
+    assert resposta.status_code == sem_sessao.get("/api/v1/home").status_code == 401
+    assert "wk_" not in resposta.text
 
 
 @pytest.mark.parametrize(

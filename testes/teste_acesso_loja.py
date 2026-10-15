@@ -35,7 +35,7 @@ FORA_DO_PORTAO = {
     "/api/v1/health": "healthcheck do Docker, sem sessão",
     "/api/v1/acesso": "é por aqui que o barrado entende o motivo e pede liberação",
     "/api/v1/clientes": "identificar é o primeiro passo do pedido; eu/sair só mexem na própria conta",
-    "/api/v1/atendimento": "chat Burnwood: quem espera aprovação também fala com o atendimento",
+    "/api/v1/burnwood": "chamada pelo servidor da Burnwood, sem sessão; protegida por token próprio",
 }
 
 

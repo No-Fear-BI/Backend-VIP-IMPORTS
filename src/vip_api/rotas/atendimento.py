@@ -1,8 +1,9 @@
 """GET /api/v1/atendimento/widget — o que a loja precisa para mostrar o chat.
 
-Pública e FORA do portão de acesso de propósito: quem está esperando
-aprovação também pode falar com o atendimento. Devolve só dado público (o
-endereço do widget.js e a chave pública do canal, `wk_…`), nunca a key.
+Atrás do portão de acesso, como o catálogo: só quem foi aprovado conversa com
+o agente, porque o agente consulta o catálogo (decisão de 15/10/2026). Devolve
+só dado público (o endereço do widget.js e a chave pública do canal, `wk_…`),
+nunca a key.
 
 Chat desligado (sem key, sem canal, Burnwood fora do ar) é resposta normal com
 os dois campos nulos: a loja simplesmente não carrega o chat.
