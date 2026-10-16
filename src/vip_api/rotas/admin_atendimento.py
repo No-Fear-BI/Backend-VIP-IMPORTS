@@ -36,6 +36,8 @@ _MENSAGENS = {
     "automation_unavailable": "O agente de IA não está disponível agora.",
     "reply_window_closed": "O prazo para responder esta conversa já acabou.",
     "conversation_not_found": "Conversa não encontrada.",
+    # Uma conta de WhatsApp por empresa: trocar o número é com a Burnwood.
+    "whatsapp_already_connected": "O WhatsApp já está conectado. Para trocar o número, fale com a Burnwood.",
     "permission_denied": "A key do atendimento não tem permissão para isso. Para conectar o WhatsApp, peça à Burnwood uma key manager.",
 }
 
