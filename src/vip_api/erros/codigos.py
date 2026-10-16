@@ -50,3 +50,10 @@ ERRO_INTERNO = "ERRO_INTERNO"
 # RequestValidationError usa quando o Pydantic recusa o corpo/query da
 # requisição. O detalhe por campo vai em "campos"; este é só o rótulo geral.
 DADOS_INVALIDOS = "DADOS_INVALIDOS"
+
+# Atendimento Burnwood (rotas/admin_atendimento.py). ATENDIMENTO_INDISPONIVEL:
+# key ausente, recusada ou Burnwood fora do ar — o painel mostra "o chat está
+# desligado", não "erro interno". ATENDIMENTO_ROTA_NAO_PERMITIDA: chamada fora
+# da lista do que o painel pode fazer com a key (servicos/burnwood.py).
+ATENDIMENTO_INDISPONIVEL = "ATENDIMENTO_INDISPONIVEL"
+ATENDIMENTO_ROTA_NAO_PERMITIDA = "ATENDIMENTO_ROTA_NAO_PERMITIDA"

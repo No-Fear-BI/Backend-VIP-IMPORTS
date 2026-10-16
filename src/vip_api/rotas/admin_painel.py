@@ -23,6 +23,7 @@ from vip_api.dependencias.sessao_admin import (
 )
 from vip_api.esquemas.admin import AdminEu
 from vip_api.rotas.admin_acesso import roteador_acesso, roteador_configuracao
+from vip_api.rotas.admin_atendimento import roteador as roteador_atendimento
 from vip_api.rotas.admin_catalogo import (
     roteador_banners,
     roteador_categorias,
@@ -56,6 +57,10 @@ roteador.include_router(roteador_revisao)
 # aqui: o portão da loja (dependencias/acesso.py) nunca pega o painel.
 roteador.include_router(roteador_acesso)
 roteador.include_router(roteador_configuracao)
+
+# Painel de conversas do atendimento Burnwood: repassa à Burnwood com a key,
+# então só existe aqui, atrás da sessão de admin.
+roteador.include_router(roteador_atendimento)
 
 
 @roteador.get("/eu", response_model=AdminEu)

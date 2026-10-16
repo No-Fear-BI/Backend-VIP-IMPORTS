@@ -46,12 +46,18 @@ def _propriedades_alcancaveis(esquema_raiz: dict, componentes: dict, vistos: set
             yield from _propriedades_alcancaveis(item, componentes, vistos)
 
 
+# A ÚNICA rota fora do painel que pode ter preço: lida pelo servidor da Burnwood com token
+# próprio, nunca pelo navegador da loja. O agente informa o preço no chat (decisão de 15/10/2026).
+# Acrescentar uma linha aqui é decisão de negócio: aparece no diff do PR.
+COM_PRECO_DE_PROPOSITO = {"/api/v1/burnwood/catalogo"}
+
+
 def teste_nenhum_esquema_publico_tem_campo_de_preco():
     openapi = app.openapi()
     componentes = openapi.get("components", {}).get("schemas", {})
     suspeitas = []
     for caminho, operacoes in openapi["paths"].items():
-        if "/api/v1/admin" in caminho:
+        if "/api/v1/admin" in caminho or caminho in COM_PRECO_DE_PROPOSITO:
             continue
         for metodo, operacao in operacoes.items():
             # Só o que SAI: respostas. (Corpo de entrada não é vazamento.)

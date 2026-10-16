@@ -49,6 +49,28 @@ class Configuracao(BaseSettings):
     # imagem some sem aviso. Ver `_exigir_imagens_https_em_producao` abaixo.
     IMAGENS_URL_BASE: str = "http://localhost:8000/midia"
 
+    # Atendimento Burnwood (chat da loja + painel de conversas). A key é a
+    # única configuração obrigatória para ligar o chat: empresa e canal vêm da
+    # própria Burnwood (GET /v1/integration). Vazia = chat desligado, e a loja
+    # funciona igual. SÓ NO SERVIDOR: nunca em VITE_*, log ou commit.
+    BURNWOOD_API_KEY: str = ""
+    # Padrão: ambiente DEV da Burnwood. Produção: https://api.burnwood.com.br.
+    BURNWOOD_API_URL: str = "https://api.dev.burnwood.com.br"
+    # Opcionais: escolher o canal do chat quando há mais de um, e onde mora o
+    # widget.js (padrão: derivado de BURNWOOD_API_URL em servicos/burnwood.py).
+    BURNWOOD_CHANNEL_KEY: str = ""
+    BURNWOOD_WIDGET_URL: str = ""
+    # Token que a BURNWOOD manda para consultar o catálogo (GET /burnwood/catalogo).
+    # Gerado por nós, longo e aleatório; vazio = consulta desligada (sempre 401).
+    BURNWOOD_CATALOGO_TOKEN: str = ""
+    # Endereço público da loja, para o link do produto na consulta da Burnwood.
+    # Vazio = a primeira de ORIGENS_PERMITIDAS, que já é o domínio do site.
+    LOJA_URL: str = ""
+
+    @property
+    def url_da_loja(self) -> str:
+        return (self.LOJA_URL or (self.ORIGENS_PERMITIDAS or [""])[0]).rstrip("/")
+
     @field_validator("ORIGENS_PERMITIDAS", "PROXIES_CONFIAVEIS", mode="before")
     @classmethod
     def _dividir_lista(cls, valor: object) -> object:
@@ -111,6 +133,24 @@ class Configuracao(BaseSettings):
                 "WHATSAPP_LOJA precisa ser o número da loja em formato "
                 "internacional, só dígitos (ex.: 554196941824). Sem ele o "
                 "link de cada seleção enviada aponta para lugar nenhum."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _conferir_key_burnwood(self) -> Self:
+        # Key vazia é permitida (chat desligado); key preenchida com outra
+        # coisa é erro de digitação ou segredo trocado, e o chat sumiria do
+        # site sem ninguém saber por quê.
+        if self.BURNWOOD_API_KEY and not self.BURNWOOD_API_KEY.startswith("bwk_"):
+            raise RuntimeError(
+                "BURNWOOD_API_KEY precisa começar com bwk_ (é a key que a "
+                "Burnwood enviou). Deixe vazia para desligar o chat."
+            )
+        # Token curto se adivinha; a consulta devolve preço e estoque reais.
+        if self.BURNWOOD_CATALOGO_TOKEN and len(self.BURNWOOD_CATALOGO_TOKEN) < 32:
+            raise RuntimeError(
+                "BURNWOOD_CATALOGO_TOKEN precisa ter pelo menos 32 caracteres "
+                "(gere com: openssl rand -base64 48). Vazio desliga a consulta."
             )
         return self
 
