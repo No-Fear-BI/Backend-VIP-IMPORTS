@@ -36,7 +36,7 @@ _MENSAGENS = {
     "automation_unavailable": "O agente de IA não está disponível agora.",
     "reply_window_closed": "O prazo para responder esta conversa já acabou.",
     "conversation_not_found": "Conversa não encontrada.",
-    "permission_denied": "A key do atendimento não tem permissão para isso.",
+    "permission_denied": "A key do atendimento não tem permissão para isso. Para conectar o WhatsApp, peça à Burnwood uma key manager.",
 }
 
 
@@ -133,3 +133,49 @@ def agir_na_conversa(
 @roteador.get("/channels")
 def listar_canais(requisicao: Request, atual: AdminAutenticado = Depends(admin_autenticado)) -> Response:
     return _repassar(requisicao, "channels", None, atual)
+
+
+# ---------------------------------------------------------------- Configurações → WhatsApp
+# O painel não tem papéis: todo administrador é dono da configuração da loja.
+
+
+@roteador.get("/configuracao")
+def configuracao_do_atendimento(atual: AdminAutenticado = Depends(admin_autenticado)) -> dict:
+    """O que a key permite. `podeConectarWhatsapp` falso = key `operator`: a tela mostra só o status."""
+    try:
+        return {"podeConectarWhatsapp": burnwood.pode_configurar()}
+    except burnwood.BurnwoodIndisponivel:
+        logger.exception("atendimento indisponível")
+        raise AppError(
+            codigo=ATENDIMENTO_INDISPONIVEL,
+            mensagem="O atendimento está desligado ou fora do ar agora.",
+            status_code=503,
+        ) from None
+
+
+@roteador.get("/whatsapp")
+def obter_whatsapp(requisicao: Request, atual: AdminAutenticado = Depends(admin_autenticado)) -> Response:
+    """Estado da conexão: `{connected, provider, phone_number, display_name, state, updated_at}`."""
+    return _repassar(requisicao, "whatsapp", None, atual)
+
+
+@roteador.post("/whatsapp/connect")
+def conectar_whatsapp(
+    requisicao: Request,
+    corpo: bytes | None = Depends(_corpo_bruto),
+    atual: AdminAutenticado = Depends(admin_autenticado),
+) -> Response:
+    """Começa a conexão: `{connect_url, state, expires_in}`. A tela abre `connect_url` numa janela."""
+    return _repassar(requisicao, "whatsapp/connect", corpo, atual)
+
+
+@roteador.post("/whatsapp/connect/complete")
+def concluir_whatsapp(
+    requisicao: Request,
+    corpo: bytes | None = Depends(_corpo_bruto),
+    atual: AdminAutenticado = Depends(admin_autenticado),
+) -> Response:
+    """Fecha a conexão com o `state` (e o `phone_number_id`, se a janela mandou). 409 = o número
+    ainda está sendo registrado; a tela tenta de novo. Quem confere o número é a Burnwood."""
+    return _repassar(requisicao, "whatsapp/connect/complete", corpo, atual)
+

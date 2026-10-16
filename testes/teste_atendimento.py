@@ -37,6 +37,7 @@ class BurnwoodFalsa:
         self.chamadas: list[httpx.Request] = []
         self.respostas: dict[tuple[str, str], httpx.Response] = {}
         self.fora_do_ar = False
+        self.permissoes = ["conversations.read"]
 
     def responder(self, metodo: str, caminho: str, status: int = 200, corpo=None) -> None:
         self.respostas[(metodo, caminho)] = httpx.Response(status, json=corpo)
@@ -46,7 +47,7 @@ class BurnwoodFalsa:
         if self.fora_do_ar:
             raise httpx.ConnectError("fora do ar", request=requisicao)
         if requisicao.url.path == "/v1/integration":
-            return httpx.Response(200, json=INTEGRACAO)
+            return httpx.Response(200, json={**INTEGRACAO, "permissions": self.permissoes})
         resposta = self.respostas.get((requisicao.method, requisicao.url.path))
         return resposta if resposta is not None else httpx.Response(404, json={"error": {"code": "not_found"}})
 
@@ -263,3 +264,75 @@ def teste_widget_fica_atras_do_portao(sem_sessao, sessao, falsa):
 )
 def teste_url_do_widget(api, widget):
     assert burnwood.url_do_widget(api) == widget
+
+
+# ---------------------------------------------------------------- Configurações → WhatsApp
+
+WHATSAPP = {
+    "connected": True,
+    "provider": "wasapflow",
+    "phone_number": "+55 41 99999-0000",
+    "display_name": "VIP Imports",
+    "state": "connected",
+    "updated_at": "2026-10-16T12:00:00Z",
+}
+
+
+def teste_configuracao_diz_se_a_key_pode_conectar(admin_logado, falsa):
+    assert admin_logado.get(f"{ROTA}/configuracao").json() == {"podeConectarWhatsapp": False}
+    falsa.permissoes = ["conversations.read", "automations.configure"]
+    burnwood.esquecer_descoberta()
+    assert admin_logado.get(f"{ROTA}/configuracao").json() == {"podeConectarWhatsapp": True}
+
+
+def teste_configuracao_sem_key_e_503(admin_logado, falsa, monkeypatch):
+    monkeypatch.setattr(configuracao, "BURNWOOD_API_KEY", "")
+    assert admin_logado.get(f"{ROTA}/configuracao").status_code == 503
+
+
+def teste_estado_do_whatsapp_e_repassado(admin_logado, administrador, falsa):
+    falsa.responder("GET", "/v1/tenants/vip-import/whatsapp", corpo=WHATSAPP)
+    resposta = admin_logado.get(f"{ROTA}/whatsapp")
+    assert resposta.status_code == 200
+    assert resposta.json() == WHATSAPP
+    [repasse] = _repasses(falsa)
+    assert repasse.headers["X-Burnwood-Operator"] == administrador.nome
+
+
+def teste_conectar_e_concluir_repassam_o_corpo(admin_logado, falsa):
+    falsa.responder(
+        "POST",
+        "/v1/tenants/vip-import/whatsapp/connect",
+        corpo={"connect_url": "https://conectar.test/s/1", "state": "abc", "expires_in": 600},
+    )
+    falsa.responder("POST", "/v1/tenants/vip-import/whatsapp/connect/complete", corpo=WHATSAPP)
+
+    assert admin_logado.post(f"{ROTA}/whatsapp/connect").json()["state"] == "abc"
+    concluida = admin_logado.post(
+        f"{ROTA}/whatsapp/connect/complete", json={"state": "abc", "phone_number_id": "123"}
+    )
+
+    assert concluida.json()["connected"] is True
+    conectar, concluir = _repasses(falsa)
+    assert conectar.content == b"{}"
+    assert json.loads(concluir.content) == {"state": "abc", "phone_number_id": "123"}
+
+
+def teste_key_operator_recebe_403_explicado(admin_logado, falsa):
+    falsa.responder(
+        "POST",
+        "/v1/tenants/vip-import/whatsapp/connect",
+        status=403,
+        corpo={"error": {"code": "permission_denied"}},
+    )
+    resposta = admin_logado.post(f"{ROTA}/whatsapp/connect")
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "PERMISSION_DENIED"
+    assert "manager" in resposta.json()["erro"]["mensagem"]
+
+
+def teste_whatsapp_sem_sessao_de_admin_nao_passa(sem_sessao, cliente_logado, falsa):
+    assert sem_sessao.get(f"{ROTA}/whatsapp").status_code == 401
+    assert cliente_logado.post(f"{ROTA}/whatsapp/connect").status_code == 403
+    assert falsa.chamadas == []
+

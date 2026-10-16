@@ -39,6 +39,11 @@ _PERMITIDAS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     ("GET", re.compile(r"^channels$")),
+    # Configurações → WhatsApp: ligar o número da loja à Burnwood. Conectar
+    # exige key `manager` (permissão automations.configure); com `operator` a
+    # Burnwood responde 403 e a tela só mostra o status.
+    ("GET", re.compile(r"^whatsapp$")),
+    ("POST", re.compile(r"^whatsapp/connect(/complete)?$")),
 )
 
 # Parâmetros de busca que a listagem e a linha do tempo aceitam; o resto cai.
@@ -130,6 +135,14 @@ def descobrir() -> dict:
     _descoberta_em = agora
     _descoberta_key = configuracao.BURNWOOD_API_KEY
     return _descoberta
+
+
+PERMISSAO_CONFIGURAR = "automations.configure"
+
+
+def pode_configurar() -> bool:
+    """A key é `manager`? Sem isso a tela do WhatsApp só mostra o status."""
+    return PERMISSAO_CONFIGURAR in (descobrir().get("permissions") or [])
 
 
 def esquecer_descoberta() -> None:

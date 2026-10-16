@@ -337,6 +337,7 @@ O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equi
   - `GET conversations/{id}` e `GET conversations/{id}/messages` (`?after=<id da última>`, `before=`)
   - `POST conversations/{id}/takeover|reply|pause|resume|return-to-bot|resolve|close` (`reply` com `{"body": "…"}`)
   - `GET channels`
+  - `GET whatsapp`, `POST whatsapp/connect`, `POST whatsapp/connect/complete` (Configurações → WhatsApp, abaixo)
 - **Sucesso volta o JSON da Burnwood como veio** (snake_case: `available_actions`, `last_message`, `author_type`…), não esquema nosso. Os botões da conversa são exatamente os de `available_actions`: a Burnwood decide o que vale em cada estado.
 - **Erro volta no envelope da API.** 503 `ATENDIMENTO_INDISPONIVEL` = key ausente/recusada ou Burnwood fora do ar. Erros da Burnwood viram o código dela em maiúsculas com mensagem pronta: 409 `CONVERSATION_ASSIGNED` (outra pessoa assumiu), 409 `NOT_CONVERSATION_OWNER` (só quem assumiu responde), 409 `INVALID_TRANSITION`, 429 (muitas requisições).
 - Consulta recomendada pela Burnwood: lista a cada 5 s, conversa aberta a cada 2 s com `after=`, e nada com a aba escondida.
@@ -349,4 +350,14 @@ O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equi
 - **Busca por palavra:** cada palavra de `q` vale um ponto se casar com o nome, a marca, a categoria, um tamanho, uma cor ou uma parte do código; o código inteiro tem prioridade. Os que casam mais palavras vêm primeiro, os disponíveis antes dos esgotados. Produto oculto nunca aparece. `limit` de 1 a 20 (padrão 10). Sem resultado: `{"items": []}`.
 - **Resposta** no formato da Burnwood, campos planos: `sku` (código), `nome`, `marca`, `categoria`, `publico`, `preco` (em reais; `null` = sem preço cadastrado), `disponivel`, `estoque` (`null` = não informado), `tamanhos` e `cores` (só os disponíveis), `link` (`LOJA_URL` ou a primeira de `ORIGENS_PERMITIDAS` + `/produto/<código>`).
 - **Preço:** é a única rota fora do painel com o preço interno, por decisão de 15/10/2026 (o agente informa o preço no chat). A exceção está declarada em `testes/teste_preco_nao_vaza.py`; a loja continua sem preço.
+
+### Configurações → WhatsApp (16/10/2026)
+
+Liga o número de WhatsApp da loja à Burnwood: o agente passa a atender também por lá, e o número continua funcionando no app WhatsApp Business. Todo administrador do painel acessa (o painel não tem papéis).
+
+- `GET /admin/atendimento/configuracao` → `{ podeConectarWhatsapp }`. Falso = a key é `operator` (sem `automations.configure`): a tela mostra só o estado e pede uma key `manager` à Burnwood.
+- `GET /admin/atendimento/whatsapp` → `{connected, provider, phone_number, display_name, state, updated_at}` (formato da Burnwood). `state`: `connected`, `offboarded` (reconectar), `partner_removed` (conectar de novo).
+- `POST /admin/atendimento/whatsapp/connect` → `{connect_url, state, expires_in}`. A tela abre a janela no CLIQUE (bloqueador de pop-up), chama esta rota e aponta a janela para `connect_url`.
+- `POST /admin/atendimento/whatsapp/connect/complete` com `{state, phone_number_id?}` → o mesmo do GET. Aceite só mensagens (`postMessage`) da origem de `connect_url` com o seu `state`: `WASAPFLOW_CONNECT_SUCCESS` → concluir; `…_CANCEL`/`…_ERROR` → avisar. Janela fechada sem mensagem → concluir mesmo assim. **409 = o número ainda está registrando: tente de novo até 4 vezes, 2,5 s entre elas.** Quem confere o número é a Burnwood; nada do navegador vale como prova.
+- Key `operator` tentando conectar: 403 `PERMISSION_DENIED` com mensagem pedindo a key `manager`.
 

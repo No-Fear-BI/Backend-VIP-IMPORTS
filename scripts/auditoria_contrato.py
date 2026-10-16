@@ -81,6 +81,10 @@ FORA_DO_CONTRATO = {
     ("GET", "/admin/atendimento/conversations/{conversa_id}/messages"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
     ("POST", "/admin/atendimento/conversations/{conversa_id}/{acao}"): "painel de conversas Burnwood (repasse; ações em servicos/burnwood.py); registrada em docs/para-o-frontend.md",
     ("GET", "/admin/atendimento/channels"): "painel de conversas Burnwood (repasse); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/configuracao"): "Configurações → WhatsApp (o que a key permite); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/whatsapp"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/whatsapp/connect"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/whatsapp/connect/complete"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do

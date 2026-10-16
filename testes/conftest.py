@@ -80,6 +80,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import event  # noqa: E402
 
 from vip_api.banco import engine, obter_sessao  # noqa: E402
+from vip_api.configuracao import configuracao  # noqa: E402
 from vip_api.modelos.acesso import AcessoConfig  # noqa: E402
 from vip_api.modelos.admin import Administrador  # noqa: E402
 from vip_api.modelos.cliente import Cliente  # noqa: E402
@@ -87,6 +88,7 @@ from vip_api.principal import app  # noqa: E402
 from vip_api.seguranca.senhas import gerar_hash  # noqa: E402
 from vip_api.servicos.admin import criar_sessao_admin  # noqa: E402
 from vip_api.servicos.cliente import criar_sessao_cliente  # noqa: E402
+from vip_api.servicos import burnwood  # noqa: E402
 
 from testes.identidades import (  # noqa: E402
     CLIENTE_DE_ORIGEM,
@@ -143,6 +145,20 @@ def sessao():
     sessao_de_teste.close()
     transacao.rollback()
     conexao.close()
+
+
+@pytest.fixture(autouse=True)
+def burnwood_desligada_nos_testes(monkeypatch) -> None:
+    """Nenhum teste fala com a Burnwood de verdade.
+
+    O `.env` de quem roda a suíte pode ter a key real (para testar o chat na
+    própria máquina), e a Configuracao lê o `.env`. Sem isto, a varredura do
+    painel chamaria a Burnwood DEV com a key de alguém. Quem testa a
+    integração liga uma Burnwood FALSA (testes/teste_atendimento.py).
+    """
+    monkeypatch.setattr(configuracao, "BURNWOOD_API_KEY", "")
+    monkeypatch.setattr(configuracao, "BURNWOOD_CATALOGO_TOKEN", "")
+    burnwood.esquecer_descoberta()
 
 
 @pytest.fixture(autouse=True)
