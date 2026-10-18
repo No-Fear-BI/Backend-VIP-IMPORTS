@@ -36,8 +36,13 @@ _MENSAGENS = {
     "automation_unavailable": "O agente de IA não está disponível agora.",
     "reply_window_closed": "O prazo para responder esta conversa já acabou.",
     "conversation_not_found": "Conversa não encontrada.",
-    # Uma conta de WhatsApp por empresa: trocar o número é com a Burnwood.
-    "whatsapp_already_connected": "O WhatsApp já está conectado. Para trocar o número, fale com a Burnwood.",
+    # Uma conta de WhatsApp por empresa: desconecte antes de conectar outro número.
+    "whatsapp_already_connected": "O WhatsApp já está conectado. Desconecte antes de conectar outro número.",
+    "connection_not_found": "A janela terminou antes de o número aparecer na lista. Tente de novo.",
+    # Mercado Pago (ambiente de testes da Burnwood).
+    "test_accounts_only": "Neste ambiente só vale conta de TESTE do Mercado Pago. Conecte o vendedor de teste.",
+    "payments_disabled": "Pagamentos estão desligados neste ambiente da Burnwood.",
+    "mercadopago_not_connected": "Nenhuma conta do Mercado Pago conectada. Conecte pelo portal da Burnwood.",
     "permission_denied": "A key do atendimento não tem permissão para isso. Para conectar o WhatsApp, peça à Burnwood uma key manager.",
 }
 
@@ -143,9 +148,13 @@ def listar_canais(requisicao: Request, atual: AdminAutenticado = Depends(admin_a
 
 @roteador.get("/configuracao")
 def configuracao_do_atendimento(atual: AdminAutenticado = Depends(admin_autenticado)) -> dict:
-    """O que a key permite. `podeConectarWhatsapp` falso = key `operator`: a tela mostra só o status."""
+    """O que a key permite. `podeConectarWhatsapp` falso = key `operator`: a tela mostra só o
+    status. `portalPagamentosUrl`: onde se conecta a conta do Mercado Pago."""
     try:
-        return {"podeConectarWhatsapp": burnwood.pode_configurar()}
+        return {
+            "podeConectarWhatsapp": burnwood.pode_configurar(),
+            "portalPagamentosUrl": burnwood.url_portal_pagamentos(),
+        }
     except burnwood.BurnwoodIndisponivel:
         logger.exception("atendimento indisponível")
         raise AppError(
@@ -180,4 +189,56 @@ def concluir_whatsapp(
     """Fecha a conexão com o `state` (e o `phone_number_id`, se a janela mandou). 409 = o número
     ainda está sendo registrado; a tela tenta de novo. Quem confere o número é a Burnwood."""
     return _repassar(requisicao, "whatsapp/connect/complete", corpo, atual)
+
+
+@roteador.post("/whatsapp/disconnect")
+def desconectar_whatsapp(
+    requisicao: Request,
+    corpo: bytes | None = Depends(_corpo_bruto),
+    atual: AdminAutenticado = Depends(admin_autenticado),
+) -> Response:
+    """Desliga o número da Burnwood: o agente para, as conversas ficam. O registro no
+    provedor continua, e isso NÃO libera a vaga paga no provedor."""
+    return _repassar(requisicao, "whatsapp/disconnect", corpo, atual)
+
+
+@roteador.post("/whatsapp/readiness/{etapa}")
+def verificacao_whatsapp(
+    etapa: str,
+    requisicao: Request,
+    corpo: bytes | None = Depends(_corpo_bruto),
+    atual: AdminAutenticado = Depends(admin_autenticado),
+) -> Response:
+    """`start`: gera a frase BW-… que alguém manda de outro celular. `missed`: avisa que a
+    frase não chegou. `operational` só depois que a Burnwood guarda uma mensagem real."""
+    return _repassar(requisicao, f"whatsapp/readiness/{etapa}", corpo, atual)
+
+
+# ---------------------------------------------------------------- Configurações → Mercado Pago
+
+
+@roteador.get("/payments/mercadopago")
+def situacao_mercadopago(requisicao: Request, atual: AdminAutenticado = Depends(admin_autenticado)) -> Response:
+    """`{enabled, connected, mode, payments_enabled, operational?}`. `mode` = `test` no ambiente de testes."""
+    return _repassar(requisicao, "payments/mercadopago", None, atual)
+
+
+@roteador.get("/payments/mercadopago/{lista}")
+def listar_mercadopago(
+    lista: str, requisicao: Request, atual: AdminAutenticado = Depends(admin_autenticado)
+) -> Response:
+    """`requests` (pedidos aprovados: valor e finalidade) ou `checkouts` (links e situação)."""
+    return _repassar(requisicao, f"payments/mercadopago/{lista}", None, atual)
+
+
+@roteador.post("/payments/mercadopago/{lista}")
+def criar_mercadopago(
+    lista: str,
+    requisicao: Request,
+    corpo: bytes | None = Depends(_corpo_bruto),
+    atual: AdminAutenticado = Depends(admin_autenticado),
+) -> Response:
+    """`requests` `{amount, purpose}`: aprova um valor (o agente nunca escolhe valor).
+    `checkouts` `{description, amount}`: cria o link de pagamento desse valor."""
+    return _repassar(requisicao, f"payments/mercadopago/{lista}", corpo, atual)
 

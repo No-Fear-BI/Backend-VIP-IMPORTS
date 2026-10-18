@@ -85,6 +85,11 @@ FORA_DO_CONTRATO = {
     ("GET", "/admin/atendimento/whatsapp"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
     ("POST", "/admin/atendimento/whatsapp/connect"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
     ("POST", "/admin/atendimento/whatsapp/connect/complete"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/whatsapp/disconnect"): "Configurações → WhatsApp (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/whatsapp/readiness/{etapa}"): "Configurações → WhatsApp, verificação de entrada (repasse); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/payments/mercadopago"): "Configurações → Mercado Pago (repasse); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/atendimento/payments/mercadopago/{lista}"): "Configurações → Mercado Pago (repasse); registrada em docs/para-o-frontend.md",
+    ("POST", "/admin/atendimento/payments/mercadopago/{lista}"): "Configurações → Mercado Pago (repasse); registrada em docs/para-o-frontend.md",
 }
 
 # Nenhuma rota implementada pode casar com estes padrões: é o VOCABULÁRIO do

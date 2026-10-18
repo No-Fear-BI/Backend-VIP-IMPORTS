@@ -44,6 +44,17 @@ _PERMITIDAS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Burnwood responde 403 e a tela só mostra o status.
     ("GET", re.compile(r"^whatsapp$")),
     ("POST", re.compile(r"^whatsapp/connect(/complete)?$")),
+    # Desligar da Burnwood (o registro no provedor continua) e a verificação de
+    # entrada (`operational` = uma mensagem real chegou). De propósito FORA da
+    # lista: `whatsapp/provider-registration`, que apaga a conta do WhatsApp
+    # Business no provedor e não tem volta — fica no portal da Burnwood.
+    ("POST", re.compile(r"^whatsapp/disconnect$")),
+    ("POST", re.compile(r"^whatsapp/readiness/(start|missed)$")),
+    # Configurações → Mercado Pago: situação, pedidos aprovados (valor e
+    # finalidade) e checkouts. Conectar a conta é no portal da Burnwood.
+    ("GET", re.compile(r"^payments/mercadopago$")),
+    ("GET", re.compile(r"^payments/mercadopago/(requests|checkouts)$")),
+    ("POST", re.compile(r"^payments/mercadopago/(requests|checkouts)$")),
 )
 
 # Parâmetros de busca que a listagem e a linha do tempo aceitam; o resto cai.
@@ -143,6 +154,14 @@ PERMISSAO_CONFIGURAR = "automations.configure"
 def pode_configurar() -> bool:
     """A key é `manager`? Sem isso a tela do WhatsApp só mostra o status."""
     return PERMISSAO_CONFIGURAR in (descobrir().get("permissions") or [])
+
+
+def url_portal_pagamentos() -> str:
+    """Página de Pagamentos da empresa no portal da Burnwood: é lá que se conecta
+    a conta do Mercado Pago (o retorno do login do Mercado Pago volta para o portal)."""
+    slug = descobrir()["tenant"]["slug"]
+    portal = (configuracao.BURNWOOD_WIDGET_URL or url_do_widget(_url_api())).rstrip("/")
+    return f"{portal}/t/{slug}/payments"
 
 
 def esquecer_descoberta() -> None:
