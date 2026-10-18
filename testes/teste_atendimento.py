@@ -278,11 +278,17 @@ WHATSAPP = {
 }
 
 
+PORTAL = "https://dev.burnwood.com.br/t/vip-import/payments"
+
+
 def teste_configuracao_diz_se_a_key_pode_conectar(admin_logado, falsa):
-    assert admin_logado.get(f"{ROTA}/configuracao").json() == {"podeConectarWhatsapp": False}
+    assert admin_logado.get(f"{ROTA}/configuracao").json() == {
+        "podeConectarWhatsapp": False,
+        "portalPagamentosUrl": PORTAL,
+    }
     falsa.permissoes = ["conversations.read", "automations.configure"]
     burnwood.esquecer_descoberta()
-    assert admin_logado.get(f"{ROTA}/configuracao").json() == {"podeConectarWhatsapp": True}
+    assert admin_logado.get(f"{ROTA}/configuracao").json()["podeConectarWhatsapp"] is True
 
 
 def teste_configuracao_sem_key_e_503(admin_logado, falsa, monkeypatch):
@@ -335,4 +341,84 @@ def teste_whatsapp_sem_sessao_de_admin_nao_passa(sem_sessao, cliente_logado, fal
     assert sem_sessao.get(f"{ROTA}/whatsapp").status_code == 401
     assert cliente_logado.post(f"{ROTA}/whatsapp/connect").status_code == 403
     assert falsa.chamadas == []
+
+
+# ---------------------------------------------------------------- verificação, desconexão, Mercado Pago
+
+
+@pytest.mark.parametrize(
+    "caminho",
+    ["whatsapp/disconnect", "whatsapp/readiness/start", "whatsapp/readiness/missed"],
+)
+def teste_desconectar_e_verificacao_sao_repassados(admin_logado, falsa, caminho):
+    falsa.responder("POST", f"/v1/tenants/vip-import/{caminho}", corpo=WHATSAPP)
+    resposta = admin_logado.post(f"{ROTA}/{caminho}")
+    assert resposta.status_code == 200
+    [repasse] = _repasses(falsa)
+    assert repasse.url.path == f"/v1/tenants/vip-import/{caminho}"
+    assert repasse.content == b"{}"
+
+
+@pytest.mark.parametrize(
+    "caminho",
+    [
+        "whatsapp/readiness/apagar",
+        # Apaga a conta do WhatsApp Business no provedor e não tem volta: fica no portal da Burnwood.
+        "whatsapp/provider-registration",
+    ],
+)
+def teste_acoes_fora_da_lista_nao_chegam_na_burnwood(admin_logado, falsa, caminho):
+    resposta = admin_logado.post(f"{ROTA}/{caminho}", json={"confirm": "REMOVE"})
+    assert resposta.status_code in (404, 405)
+    assert _repasses(falsa) == []
+
+
+def teste_mercadopago_situacao_e_listas_sao_repassadas(admin_logado, falsa):
+    falsa.responder(
+        "GET",
+        "/v1/tenants/vip-import/payments/mercadopago",
+        corpo={"enabled": True, "connected": False, "mode": "test", "payments_enabled": True},
+    )
+    falsa.responder("GET", "/v1/tenants/vip-import/payments/mercadopago/requests", corpo=[])
+    falsa.responder("GET", "/v1/tenants/vip-import/payments/mercadopago/checkouts", corpo=[])
+
+    assert admin_logado.get(f"{ROTA}/payments/mercadopago").json()["mode"] == "test"
+    assert admin_logado.get(f"{ROTA}/payments/mercadopago/requests").json() == []
+    assert admin_logado.get(f"{ROTA}/payments/mercadopago/checkouts").json() == []
+    assert admin_logado.get(f"{ROTA}/payments/mercadopago/secret").status_code == 404
+
+
+def teste_mercadopago_aprovar_e_criar_checkout_repassam_o_corpo(admin_logado, falsa):
+    falsa.responder(
+        "POST",
+        "/v1/tenants/vip-import/payments/mercadopago/requests",
+        corpo={"id": "r1", "amount": "10.00", "currency": "BRL", "purpose": "Teste", "status": "approved"},
+    )
+    falsa.responder(
+        "POST",
+        "/v1/tenants/vip-import/payments/mercadopago/checkouts",
+        corpo={"id": "c1", "description": "Teste", "amount": "10.00", "status": "created",
+               "provider_status": "pending", "checkout_url": "https://mp.test/c1", "live": False},
+    )
+
+    admin_logado.post(f"{ROTA}/payments/mercadopago/requests", json={"amount": "10.00", "purpose": "Teste"})
+    criado = admin_logado.post(f"{ROTA}/payments/mercadopago/checkouts", json={"description": "Teste", "amount": "10.00"})
+
+    assert criado.json()["live"] is False
+    pedido, checkout = _repasses(falsa)
+    assert json.loads(pedido.content) == {"amount": "10.00", "purpose": "Teste"}
+    assert json.loads(checkout.content) == {"description": "Teste", "amount": "10.00"}
+
+
+def teste_conta_real_do_mercadopago_vira_mensagem_clara(admin_logado, falsa):
+    falsa.responder(
+        "POST",
+        "/v1/tenants/vip-import/payments/mercadopago/checkouts",
+        status=409,
+        corpo={"error": {"code": "test_accounts_only"}},
+    )
+    resposta = admin_logado.post(f"{ROTA}/payments/mercadopago/checkouts", json={})
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "TEST_ACCOUNTS_ONLY"
+    assert "TESTE" in resposta.json()["erro"]["mensagem"]
 

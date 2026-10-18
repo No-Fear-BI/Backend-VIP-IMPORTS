@@ -337,7 +337,8 @@ O atendimento é da Burnwood: um agente de IA responde no chat do site, e a equi
   - `GET conversations/{id}` e `GET conversations/{id}/messages` (`?after=<id da última>`, `before=`)
   - `POST conversations/{id}/takeover|reply|pause|resume|return-to-bot|resolve|close` (`reply` com `{"body": "…"}`)
   - `GET channels`
-  - `GET whatsapp`, `POST whatsapp/connect`, `POST whatsapp/connect/complete` (Configurações → WhatsApp, abaixo)
+  - `GET whatsapp`, `POST whatsapp/connect`, `POST whatsapp/connect/complete`, `POST whatsapp/disconnect`, `POST whatsapp/readiness/start|missed` (Configurações → WhatsApp, abaixo)
+  - `GET payments/mercadopago`, `GET|POST payments/mercadopago/requests|checkouts` (Configurações → Mercado Pago, abaixo)
 - **Sucesso volta o JSON da Burnwood como veio** (snake_case: `available_actions`, `last_message`, `author_type`…), não esquema nosso. Os botões da conversa são exatamente os de `available_actions`: a Burnwood decide o que vale em cada estado.
 - **Erro volta no envelope da API.** 503 `ATENDIMENTO_INDISPONIVEL` = key ausente/recusada ou Burnwood fora do ar. Erros da Burnwood viram o código dela em maiúsculas com mensagem pronta: 409 `CONVERSATION_ASSIGNED` (outra pessoa assumiu), 409 `NOT_CONVERSATION_OWNER` (só quem assumiu responde), 409 `INVALID_TRANSITION`, 429 (muitas requisições).
 - Consulta recomendada pela Burnwood: lista a cada 5 s, conversa aberta a cada 2 s com `after=`, e nada com a aba escondida.
@@ -360,4 +361,21 @@ Liga o número de WhatsApp da loja à Burnwood: o agente passa a atender também
 - `POST /admin/atendimento/whatsapp/connect` → `{connect_url, state, expires_in}`. A tela abre a janela no CLIQUE (bloqueador de pop-up), chama esta rota e aponta a janela para `connect_url`.
 - `POST /admin/atendimento/whatsapp/connect/complete` com `{state, phone_number_id?}` → o mesmo do GET. Aceite só mensagens (`postMessage`) da origem de `connect_url` com o seu `state`: `WASAPFLOW_CONNECT_SUCCESS` → concluir; `…_CANCEL`/`…_ERROR` → avisar. Janela fechada sem mensagem → concluir mesmo assim. **409 = o número ainda está registrando: tente de novo até 4 vezes, 2,5 s entre elas.** Quem confere o número é a Burnwood; nada do navegador vale como prova.
 - Key `operator` tentando conectar: 403 `PERMISSION_DENIED` com mensagem pedindo a key `manager`.
+
+### WhatsApp: verificação de entrada e desconexão (18/10/2026)
+
+- `GET /admin/atendimento/whatsapp` passou a trazer `readiness`: `{provider_linked, status, challenge, last_inbound_at, validated_at, failure_reason}`. `status`: `not_linked`, `not_verified`, `awaiting_inbound`, `operational`, `validation_failed`. **`operational` = a Burnwood guardou uma mensagem real que chegou ao número; qualquer outro valor não está verificado.**
+- `POST /admin/atendimento/whatsapp/readiness/start` gera a frase (`challenge`, `BW-…`) que alguém manda **de outro celular**; a Burnwood não envia nada. `…/readiness/missed`: a frase não chegou. Com `awaiting_inbound`, consulte de 4 em 4 s.
+- `POST /admin/atendimento/whatsapp/disconnect`: desliga o número da Burnwood (o agente para, as conversas ficam). O registro no provedor continua e **a vaga paga no provedor não é liberada**. Conectado, `connect` responde 409 `WHATSAPP_ALREADY_CONNECTED`: desconecte antes de conectar outro número.
+- **Fora daqui de propósito:** `whatsapp/provider-registration` (apaga a conta do WhatsApp Business no provedor, sem volta). Fica no portal da Burnwood.
+
+### Configurações → Mercado Pago (18/10/2026)
+
+Só testes por enquanto: na DEV da Burnwood o Mercado Pago está em **modo teste** e conta real é recusada (409 `TEST_ACCOUNTS_ONLY`). Cobrar de verdade é decisão do cliente (a loja não vende pelo site).
+
+- `GET /admin/atendimento/configuracao` traz `portalPagamentosUrl`: a página de Pagamentos no portal da Burnwood, **onde se conecta a conta** (o retorno do Mercado Pago volta para lá; nenhum segredo de pagamento passa por nós).
+- `GET /admin/atendimento/payments/mercadopago` → `{enabled, connected, mode, payments_enabled, operational?}`.
+- `GET|POST /admin/atendimento/payments/mercadopago/requests` — pedidos aprovados: `POST {amount: "10.00", purpose}`; lista `[{id, amount, currency, purpose, status}]`. **O agente nunca escolhe valor**: só usa pedido aprovado.
+- `GET|POST /admin/atendimento/payments/mercadopago/checkouts` — `POST {description, amount}` cria o link; lista `[{id, description, amount, status, provider_status, checkout_url, live}]`. `status` `paid`/`pending`/`failed` vem do webhook do Mercado Pago na Burnwood; **link aberto não é pagamento confirmado**. Com `created`/`pending`, consulte de 4 em 4 s.
+- A tela só aprova pedido e cria checkout com `mode: "test"`.
 
