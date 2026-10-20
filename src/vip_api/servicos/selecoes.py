@@ -1,4 +1,4 @@
-"""Gera a mensagem do WhatsApp em memória, sem registrar pedidos."""
+"""Gera a mensagem do WhatsApp e registra o pedido para o painel acompanhar."""
 
 from urllib.parse import quote
 
@@ -11,6 +11,7 @@ from vip_api.erros.excecoes import AppError
 from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoSaida
 from vip_api.modelos.catalogo import Categoria, Marca, Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente
+from vip_api.modelos.pedido import Pedido
 from vip_api.servicos.colecoes import nome_da_colecao
 
 SAUDACAO = "Olá! Tenho interesse nestes itens:"
@@ -103,6 +104,17 @@ def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
         for linha in linhas
     ]
     mensagem = montar_mensagem(itens)
+
+    sessao.add(
+        Pedido(
+            cliente_id=cliente.id,
+            cliente_nome=cliente.nome,
+            cliente_email=cliente.email,
+            cliente_telefone=cliente.telefone,
+            itens=[i.model_dump() for i in itens],
+        )
+    )
+    sessao.commit()
 
     return SelecaoSaida(
         itens=itens,
