@@ -60,6 +60,8 @@ FORA_DO_CONTRATO = {
     ("POST", "/admin/cores"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
     ("PATCH", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
     ("DELETE", "/admin/cores/{corId}"): "revisão 0007 (CRUD da paleta); registrada em docs/para-o-frontend.md",
+    ("GET", "/admin/pedidos"): "pedidos voltam a ser gravados (revisão 0021, pedido do dono em 20/10/2026); registrada em docs/para-o-frontend.md",
+    ("PATCH", "/admin/pedidos/{pedidoId}"): "pedidos voltam a ser gravados (revisão 0021, pedido do dono em 20/10/2026); registrada em docs/para-o-frontend.md",
     # Upload de imagem pelo painel (commit 4227441): devolve só a URL, que segue
     # pelas rotas do contrato (POST /imagens, POST/PATCH /banners).
     ("POST", "/admin/produtos/{produtoId}/imagens/upload"): "revisão upload de imagem; registrada em docs/para-o-frontend.md",

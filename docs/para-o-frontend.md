@@ -1,3 +1,13 @@
+## Atualização de 20/10/2026 — pedidos voltam, agora com status
+
+Pedido do dono: o painel passa a ter **/admin/pedidos** (em andamento, finalizados e não finalizados, com as peças, a quantidade e os dados do cliente). A decisão de 05/10/2026 (abaixo) está **revertida**: a migração 0021 cria `pedidos` e `pedido_itens`. O histórico apagado pela 0019 não volta; as tabelas nascem vazias.
+
+- **`POST /selecoes` grava o pedido.** A resposta é a mesma de antes (`itens`, `mensagemWhatsapp`, `linkWhatsapp`; sem id nem data). O pedido nasce `em_andamento`, com cópia em texto das peças (código, nome, marca, categoria, coleção, foto, tamanho, cor) e dos dados do cliente (nome, e-mail, telefone): renomear ou apagar o produto, ou o cadastro, não muda o pedido. O carrinho continua sem ser esvaziado. Enviar a MESMA seleção de novo (mesmas peças, mesmo tamanho e cor) enquanto o pedido anterior do cliente ainda está `em_andamento` devolve esse pedido em vez de criar outro; seleção diferente, ou pedido anterior já finalizado/não finalizado, cria um pedido novo.
+- **`GET /admin/pedidos`** — `?status=em_andamento|finalizado|nao_finalizado`, `?pagina=`, `?porPagina=` (até 100). Status desconhecido dá 400 `DADOS_INVALIDOS`. Do mais novo para o mais antigo, no envelope `{dados, paginacao: {total, porPagina, pagina}, contagens: {emAndamento, finalizado, naoFinalizado, total}}`. `contagens` é do banco inteiro: o filtro só restringe `dados` e `paginacao.total`. Cada pedido: `id`, `status`, `criadoEm`, `atualizadoEm`, `totalItens`, `cliente` `{id|null, nome|null, email, telefone|null}` e `itens` `[{produtoId|null, codigo, nome, marca, categoria, colecao, imagemUrl|null, tamanho|null, cor|null}]`. `produtoId` e `cliente.id` vêm nulos se o produto ou o cadastro foram apagados depois.
+- **`PATCH /admin/pedidos/{pedidoId}`** com `{"status": "finalizado"}` devolve o pedido. Quem muda o status é a equipe; qualquer status vale para qualquer outro (corrigir um clique, reabrir). `atualizadoEm` só muda se o status mudou. 404 `PEDIDO_NAO_ENCONTRADO`; status inválido, 400.
+- Só sob `/admin` (sessão de admin): nenhuma rota pública devolve pedido. O pedido guarda e-mail e telefone do cliente sem prazo e não há rota de exclusão.
+- `GET /selecoes` e `GET /admin/selecoes` continuam removidas.
+
 ## Atualização de 05/10/2026 — pedidos sem histórico
 
 Por solicitação do cliente, o histórico de pedidos foi removido. `POST /selecoes`

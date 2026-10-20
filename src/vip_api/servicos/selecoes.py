@@ -1,4 +1,4 @@
-"""Gera a mensagem do WhatsApp em memória, sem registrar pedidos."""
+"""Gera a mensagem do WhatsApp e registra a seleção como pedido (servicos/pedidos.py)."""
 
 from urllib.parse import quote
 
@@ -12,6 +12,7 @@ from vip_api.esquemas.selecao import SelecaoItemSaida, SelecaoSaida
 from vip_api.modelos.catalogo import Categoria, Marca, Produto, ProdutoImagem, ProdutoVariacao
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente
 from vip_api.servicos.colecoes import nome_da_colecao
+from vip_api.servicos.pedidos import registrar_pedido
 
 SAUDACAO = "Olá! Tenho interesse nestes itens:"
 ASSINATURA = "Enviado pelo site."
@@ -92,6 +93,11 @@ def criar_selecao(sessao: Session, cliente: Cliente) -> SelecaoSaida:
             mensagem="Sua seleção está vazia. Adicione produtos antes de enviar.",
             status_code=400,
         )
+
+    # Grava antes de responder: o pedido existe mesmo se o cliente fechar o
+    # WhatsApp sem mandar nada, e a equipe decide o que fazer com ele no painel.
+    # O carrinho NÃO é esvaziado, de propósito — a seleção continua à mão.
+    registrar_pedido(sessao, cliente, linhas)
 
     itens = [
         SelecaoItemSaida(

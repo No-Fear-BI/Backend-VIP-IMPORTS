@@ -31,6 +31,7 @@ from vip_api.rotas.admin_catalogo import (
     roteador_marcas,
 )
 from vip_api.rotas.admin_imagens import roteador as roteador_imagens
+from vip_api.rotas.admin_pedidos import roteador as roteador_pedidos
 from vip_api.rotas.admin_relatorios import (
     roteador_clientes,
     roteador_destaques,
@@ -52,6 +53,7 @@ roteador.include_router(roteador_banners)
 roteador.include_router(roteador_destaques)
 roteador.include_router(roteador_resumo)
 roteador.include_router(roteador_clientes)
+roteador.include_router(roteador_pedidos)
 roteador.include_router(roteador_revisao)
 # Controle de entrada da loja (seção 05). Aqui, no grupo protegido — e só
 # aqui: o portão da loja (dependencias/acesso.py) nunca pega o painel.
