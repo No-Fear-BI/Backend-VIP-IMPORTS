@@ -8,10 +8,12 @@ Duas fontes, cada uma com um papel (docs/modelagem-banco.md, 4.17 e 4.18):
   quem decidiu e quando. Toda decisão grava as duas coisas na mesma transação.
 
 `acesso_config` é linha única (id = 1), semeada em 'aprovacao' pela revisão
-0014: a loja é FECHADA o tempo todo, por decisão do cliente. Linha ausente
-também conta como fechado (falha fechada): um banco mal semeado não pode abrir
-a loja para quem não foi liberado. O valor 'aberto' continua no enum do banco,
-mas nenhuma rota o grava.
+0014: a loja nasce FECHADA, e só a equipe a abre, pelo painel (modo 'aberto').
+Linha ausente também conta como fechado (falha fechada): um banco mal semeado
+não pode abrir a loja para quem não foi liberado.
+
+Abrir não mexe em ninguém: quem se identifica com a loja aberta nasce
+'aprovado' (default da coluna) e continua entrando quando ela fecha de novo.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -290,8 +292,7 @@ def decidir_acesso(
 def definir_configuracao(
     sessao: Session, dados: ConfiguracaoAcessoEntrada, admin_id: int
 ) -> ConfiguracaoAcesso:
-    """PATCH parcial da configuração. A loja é sempre fechada: o esquema só
-    aceita o modo 'aprovacao', então na prática só a mensagem de bloqueio muda."""
+    """PATCH parcial do modo (abre e fecha a loja) e da mensagem de bloqueio."""
     informados = dados.model_fields_set
     if "modo" in informados and dados.modo is None:
         raise AppError(
