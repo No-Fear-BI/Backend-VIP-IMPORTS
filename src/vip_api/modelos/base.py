@@ -32,3 +32,7 @@ ACESSO_SITUACAO = ENUM(
     "pendente", "aprovado", "recusado", name="acesso_situacao", create_type=False
 )
 VARIACAO_TIPO = ENUM("tamanho", "cor", name="variacao_tipo", create_type=False)
+# Criado pela migração 0021 (pedidos voltaram a ser gravados).
+PEDIDO_STATUS = ENUM(
+    "em_andamento", "finalizado", "nao_finalizado", name="pedido_status", create_type=False
+)

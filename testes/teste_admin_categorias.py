@@ -11,6 +11,8 @@ from testes.fabrica import criar_categoria, criar_marca, criar_produto
 from vip_api.modelos.catalogo import Categoria, Produto
 
 ROTA = "/api/v1/admin/categorias"
+VITRINE = "/api/v1/colecoes/feminino/categorias"
+IMAGEM_DA_CATEGORIA = "https://exemplo.test/bolsas.jpg"
 
 
 @pytest.fixture
@@ -123,3 +125,44 @@ def teste_listagem_conta_produtos_e_traz_todas_as_categorias(
 def teste_categoria_inexistente_responde_404(admin_logado):
     assert admin_logado.patch(f"{ROTA}/99999", json={"nome": "X"}).status_code == 404
     assert admin_logado.delete(f"{ROTA}/99999").status_code == 404
+
+
+def teste_criar_com_imagem_devolve_a_imagem(admin_logado):
+    resposta = admin_logado.post(ROTA, json={"nome": "Bolsas", "imagemUrl": IMAGEM_DA_CATEGORIA})
+
+    assert resposta.status_code == 201
+    assert resposta.json()["imagemUrl"] == IMAGEM_DA_CATEGORIA
+
+
+def teste_imagem_da_categoria_chega_na_aba_categorias_da_loja(
+    admin_logado, sem_sessao, categoria_com_produtos
+):
+    def da_loja():
+        [categoria] = [c for c in sem_sessao.get(VITRINE).json() if c["id"] == categoria_com_produtos.id]
+        return categoria["imagemUrl"]
+
+    assert da_loja() is None
+
+    resposta = admin_logado.patch(
+        f"{ROTA}/{categoria_com_produtos.id}", json={"imagemUrl": IMAGEM_DA_CATEGORIA}
+    )
+
+    assert resposta.json()["imagemUrl"] == IMAGEM_DA_CATEGORIA
+    assert da_loja() == IMAGEM_DA_CATEGORIA
+
+
+def teste_imagem_null_tira_a_imagem_e_outro_campo_nao_apaga(admin_logado, categoria_com_produtos):
+    url = f"{ROTA}/{categoria_com_produtos.id}"
+    admin_logado.patch(url, json={"imagemUrl": IMAGEM_DA_CATEGORIA})
+
+    # Editar outro campo não mexe na imagem.
+    assert admin_logado.patch(url, json={"nome": "Bolsas e Carteiras"}).json()["imagemUrl"] == IMAGEM_DA_CATEGORIA
+    # null tira a imagem.
+    assert admin_logado.patch(url, json={"imagemUrl": None}).json()["imagemUrl"] is None
+
+
+def teste_imagem_da_categoria_precisa_ser_https_ou_da_propria_loja(admin_logado):
+    resposta = admin_logado.post(ROTA, json={"nome": "Bolsas", "imagemUrl": "http://outro.test/a.jpg"})
+
+    assert resposta.status_code == 400
+    assert "imagemUrl" in resposta.json()["erro"]["campos"]

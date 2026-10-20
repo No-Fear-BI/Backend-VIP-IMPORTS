@@ -1,3 +1,7 @@
+## Atualização de 20/10/2026 — pedidos voltam, agora com status
+
+Pedido do dono: a decisão de 05/10/2026 (abaixo) foi **revertida**. A migração 0021 cria `pedidos` (com `status`: em_andamento, finalizado, nao_finalizado) e `pedido_itens`, com o mesmo desenho congelado de `selecoes`/`selecao_itens`; `POST /selecoes` grava o pedido e o painel ganha `/admin/pedidos`. O histórico apagado pela 0019 não volta. Detalhes das rotas em `para-o-frontend.md`.
+
 ## Atualização de 05/10/2026 — pedidos sem histórico
 
 Por solicitação do cliente, o histórico de pedidos foi removido. `POST /selecoes`
