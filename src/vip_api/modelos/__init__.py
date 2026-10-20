@@ -19,6 +19,7 @@ from vip_api.modelos.catalogo import (
     ProdutoImagem,
     ProdutoVariacao,
 )
+from vip_api.modelos.pedido import Pedido
 from vip_api.modelos.cliente import Carrinho, CarrinhoItem, Cliente, ClienteSessao, Favorito
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "ClienteSessao",
     "Favorito",
     "Marca",
+    "Pedido",
     "Produto",
     "ProdutoImagem",
     "ProdutoVariacao",
