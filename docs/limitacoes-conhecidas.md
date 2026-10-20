@@ -44,13 +44,22 @@ identificar o cliente e abrir a sessão.
 
 ## E-mail pré-aprovado entra na loja fechada sem aprovação
 
-Desde 29/09/2026 a loja é fechada o tempo todo, e cliente novo espera a
+A loja nasce fechada (29/09/2026), e com ela fechada cliente novo espera a
 aprovação da equipe. Os e-mails listados em `EMAILS_PRE_APROVADOS` são a
 exceção: entram sempre, e o painel não os barra. Como a identificação é só por
 e-mail, **quem digitar um endereço dessa lista entra na loja**, sem senha e sem
 confirmação. É a mesma limitação da seção acima aplicada ao portão, aceita pelo
 cliente. A lista mora no ambiente (`.env`), nunca no código; para tirar o
 acesso de alguém, remova o e-mail dela e reinicie a API.
+
+## Fechar a loja não tranca quem entrou enquanto ela esteve aberta
+
+Quem se identifica com a loja aberta nasce `aprovado` (o default de
+`clientes.acesso_status`) e continua entrando quando a equipe a fecha de novo:
+fechar só volta a barrar quem estava pendente ou recusado e quem se cadastrar
+dali em diante. Para trancar também essas pessoas seria preciso nascer
+`pendente` mesmo com a loja aberta (ou revogar em lote pelo painel), decisão de
+produto ainda não tomada.
 
 ## Mexer nas variações mexe no carrinho de quem já escolheu
 

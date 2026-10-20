@@ -2,8 +2,9 @@
 
 O que não pode quebrar, em ordem de estrago:
 1. O painel NUNCA fica atrás do portão — senão a equipe se tranca do lado de
-   fora e não consegue nem desligar o portão.
+   fora e não consegue nem abrir a loja.
 2. A loja nasce FECHADA: a migração 0014 grava 'aprovacao' em acesso_config.
+   Só a equipe a abre (PATCH /admin/configuracao/acesso, modo 'aberto').
 3. Quem já estava cadastrado quando o portão foi ligado continua entrando.
 4. Pedir liberação duas vezes não estoura (índice único de uma pendente).
 """
@@ -113,7 +114,7 @@ def teste_cliente_novo_nasce_aprovado_por_padrao(sessao):
     assert pessoa.acesso_status == "aprovado"
 
 
-# --- modo aberto (mecanismo interno, só nos testes: ver conftest) ---------------
+# --- modo aberto (a equipe abre a loja pelo painel; a fixture do conftest abre nos testes) ---
 
 
 def teste_modo_aberto_nao_barra_nenhuma_rota_publica(sem_sessao, app_de_teste, sessao):
@@ -292,14 +293,70 @@ def teste_painel_nunca_e_barrado_pelo_portao(admin_logado, app_de_teste, sessao)
         assert _codigo_do_erro(resposta) not in CODIGOS_DO_PORTAO, f"GET {caminho} barrado pelo portão"
 
 
-def teste_admin_nao_consegue_abrir_a_loja(admin_logado, sem_sessao, sessao):
+def teste_admin_abre_e_fecha_a_loja(admin_logado, sem_sessao, sessao, administrador):
     _ligar_aprovacao(sessao)
     assert sem_sessao.get("/api/v1/home").status_code == 401
 
-    resposta = admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
-    assert resposta.status_code == 400
-    assert sessao.get(AcessoConfig, 1).modo == "aprovacao"
+    aberta = admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
+    assert aberta.status_code == 200
+    assert aberta.json()["modo"] == "aberto"
+    assert sem_sessao.get("/api/v1/home").status_code == 200
+    estado = sem_sessao.get("/api/v1/acesso/estado").json()
+    assert estado["modo"] == "aberto"
+    assert estado["podeNavegar"] is True
+
+    fechada = admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aprovacao"})
+    assert fechada.status_code == 200
+    assert fechada.json()["modo"] == "aprovacao"
     assert sem_sessao.get("/api/v1/home").status_code == 401
+
+    config = sessao.get(AcessoConfig, 1)
+    sessao.refresh(config)
+    assert config.modo == "aprovacao"
+    assert config.atualizado_por_admin_id == administrador.id
+
+
+def teste_abrir_so_o_modo_nao_apaga_a_mensagem_de_bloqueio(admin_logado, sessao):
+    _ligar_aprovacao(sessao, "Loja só para convidados.")
+
+    resposta = admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
+    assert resposta.json()["mensagemBloqueio"] == "Loja só para convidados."
+
+    junto = admin_logado.patch(
+        "/api/v1/admin/configuracao/acesso", json={"modo": "aprovacao", "mensagemBloqueio": "Voltamos já."}
+    )
+    assert junto.json()["modo"] == "aprovacao"
+    assert junto.json()["mensagemBloqueio"] == "Voltamos já."
+
+
+def teste_abrir_e_fechar_nao_muda_a_situacao_de_ninguem(admin_logado, app_de_teste, sessao, cliente):
+    pendente = _novo_cliente(sessao, "pendente@teste.local", "pendente")
+    recusado = _novo_cliente(sessao, "recusado@teste.local", "recusado")
+    _ligar_aprovacao(sessao)
+
+    admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aberto"})
+    # Aberta, até o pendente e o recusado navegam.
+    assert _logar(app_de_teste, sessao, pendente).get("/api/v1/home").status_code == 200
+    assert _logar(app_de_teste, sessao, recusado).get("/api/v1/home").status_code == 200
+
+    admin_logado.patch("/api/v1/admin/configuracao/acesso", json={"modo": "aprovacao"})
+    # Fechada de novo, cada um volta a ser o que era.
+    barrado = _logar(app_de_teste, sessao, pendente).get("/api/v1/home")
+    assert (barrado.status_code, _codigo_do_erro(barrado)) == (403, "ACESSO_PENDENTE")
+    barrado = _logar(app_de_teste, sessao, recusado).get("/api/v1/home")
+    assert (barrado.status_code, _codigo_do_erro(barrado)) == (403, "ACESSO_RECUSADO")
+    assert _logar(app_de_teste, sessao, cliente).get("/api/v1/home").status_code == 200
+    for pessoa, situacao in ((pendente, "pendente"), (recusado, "recusado"), (cliente, "aprovado")):
+        sessao.refresh(pessoa)
+        assert pessoa.acesso_status == situacao
+
+
+def teste_quem_se_identifica_com_a_loja_aberta_continua_entrando_quando_ela_fecha(sem_sessao, sessao):
+    """Limitação aceita, a mesma de 'ligar o portão não tranca quem já existe':
+    o cadastro feito com a loja aberta nasce aprovado e não volta a pendente."""
+    sem_sessao.post("/api/v1/clientes/identificar", json={"email": "passou@teste.local"})
+    _ligar_aprovacao(sessao)
+    assert sem_sessao.get("/api/v1/home").status_code == 200
 
 
 def teste_sem_linha_de_config_a_loja_continua_fechada(sem_sessao, sessao):
@@ -632,7 +689,7 @@ def teste_configuracao_grava_quem_mudou_e_a_mensagem(admin_logado, sessao, admin
 
 @pytest.mark.parametrize(
     "corpo",
-    [{"modo": "aberto"}, {"modo": "senha_compartilhada"}, {"modo": None}, {"modo": "fechado"}],
+    [{"modo": "senha_compartilhada"}, {"modo": None}, {"modo": "fechado"}],
 )
 def teste_configuracao_recusa_modo_sem_rota_ou_invalido(admin_logado, sessao, corpo):
     antes = sessao.get(AcessoConfig, 1).modo

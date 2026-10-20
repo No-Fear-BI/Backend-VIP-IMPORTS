@@ -165,10 +165,10 @@ def burnwood_desligada_nos_testes(monkeypatch) -> None:
 def loja_aberta_nos_testes(sessao) -> None:
     """A migração 0014 fecha a loja, e o esquema de teste sobe até o head.
 
-    O modo 'aberto' existe SÓ nos testes: aqui a config é aberta dentro da
-    transação do teste (revertida no fim, o banco de verdade não é tocado), para
-    que os demais testes de catálogo não precisem se preocupar com o portão. Os
-    testes do portão chamam `_ligar_aprovacao` quando precisam dele.
+    Aqui a config é aberta dentro da transação do teste (revertida no fim, o
+    banco de verdade não é tocado), para que os demais testes de catálogo não
+    precisem se preocupar com o portão. Os testes do portão chamam
+    `_ligar_aprovacao` quando precisam dele.
     """
     config = sessao.get(AcessoConfig, 1)
     if config is None:

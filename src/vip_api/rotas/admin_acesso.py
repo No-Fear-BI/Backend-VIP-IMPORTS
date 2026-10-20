@@ -1,7 +1,8 @@
-"""Controle de entrada, lado do painel (seção 05): fila, decisão e mensagem.
+"""Controle de entrada, lado do painel (seção 05): fila, decisão, modo e mensagem.
 
 Incluído no roteador protegido de admin_painel.py, sem proteção própria. E
-NUNCA atrás do portão da loja: é daqui que a equipe libera quem está na fila.
+NUNCA atrás do portão da loja: é daqui que a equipe abre a loja e libera quem
+está na fila.
 """
 
 from fastapi import APIRouter, Depends, Path, Query
@@ -60,7 +61,7 @@ def configurar(
     atual: AdminAutenticado = Depends(admin_autenticado),
     sessao: Session = Depends(obter_sessao),
 ) -> ConfiguracaoAcesso:
-    """Não liga nem desliga o portão: a loja é sempre fechada. Na prática só
-    grava a mensagem de bloqueio. `modo: "aprovacao"` é aceito e não muda nada;
-    'aberto' e 'senha_compartilhada' são recusados com 400."""
+    """Abre e fecha a loja (`modo`: 'aberto' ou 'aprovacao') e grava a mensagem
+    de bloqueio. PATCH parcial. 'senha_compartilhada' não tem rota de entrada
+    construída e é recusado com 400."""
     return definir_configuracao(sessao, corpo, atual.administrador.id)

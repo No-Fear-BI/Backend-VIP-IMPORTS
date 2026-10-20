@@ -16,7 +16,8 @@ testes/teste_acesso_loja.py:
   painel, o administrador não conseguiria nem liberar a fila.
 
 O portão custa uma leitura por chave primária de uma linha só (acesso_config)
-por requisição. A loja é sempre fechada; sem a linha, também conta como fechado.
+por requisição. Com o modo em 'aberto' ele não barra nada. A loja nasce fechada;
+sem a linha, também conta como fechado.
 """
 
 from fastapi import Depends, Request

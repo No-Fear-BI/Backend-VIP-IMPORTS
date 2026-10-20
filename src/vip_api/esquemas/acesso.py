@@ -5,12 +5,11 @@ from typing import Literal
 
 from vip_api.esquemas.base import EsquemaEntrada, EsquemaResposta
 
-# A loja é sempre fechada (decisão do cliente, revisão 0014): o único modo que
-# o painel pode gravar é 'aprovacao', e gravá-lo não muda nada. 'aberto' e
-# `senha_compartilhada` (modo 2, sem rota POST /acesso/senha) existem no enum
-# do banco, mas aceitá-los aqui abriria a loja ou ligaria um portão sem porta.
-# O Pydantic recusa com 400.
-ModoAceito = Literal["aprovacao"]
+# A loja nasce FECHADA (revisão 0014) e a equipe abre e fecha pelo painel: 'aberto'
+# desliga o portão e 'aprovacao' o liga. `senha_compartilhada` (modo 2, sem rota
+# POST /acesso/senha) existe no enum do banco, mas aceitá-lo aqui ligaria um
+# portão sem porta. O Pydantic recusa com 400.
+ModoAceito = Literal["aberto", "aprovacao"]
 Decisao = Literal["aprovado", "recusado"]
 
 
