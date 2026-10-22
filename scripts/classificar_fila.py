@@ -14,6 +14,8 @@ Marca: o título costuma trazer o nome da marca (às vezes disfarçado, "GU*CCI"
 em chinês ("古家" = Gucci, "L家" = Louis Vuitton). É só uma SUGESTÃO: a Revisão a deixa pré-selecionada e quem
 aprova confere. Título sem marca reconhecível fica sem `brand`; uma marca já gravada não é sobrescrita.
 
+Quando o título não traz a marca, vale a de `data/marcas-por-foto.json` (id -> marca, conferida olhando a foto do produto).
+
 Só `category` e `brand` mudam; o arquivo é regravado no mesmo formato do importador (2 espaços, LF).
 O arquivo está no git: para desfazer, `git checkout data/pending-products.json`.
 """
@@ -27,6 +29,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ARQUIVO = Path(__file__).resolve().parents[1] / "data" / "pending-products.json"
+# Marca descoberta olhando a foto do produto (id do álbum -> marca), para os títulos que não dizem a marca.
+MARCAS_POR_FOTO = Path(__file__).resolve().parents[1] / "data" / "marcas-por-foto.json"
 SEM_CATEGORIA = "A classificar"
 
 # Termos em letras latinas casam só como palavra inteira (senão "bag" pegaria "baggy"); os em
@@ -86,35 +90,35 @@ MARCAS: dict[str, list[str]] = {
     "Gucci": ["GUCCI", "GUCC", "古家", "古奇", "古驰", "古馳", "小G"],
     "Louis Vuitton": ["LOUISVUITTON", "LOUISVUTTON", "LOUIVUITTON", "LOUIVUITTO", "LOUISVUITT", "VUITTON", "VUITT", "路易威登", "L家", "LV"],
     "Dior": ["DIOR", "迪奥", "迪奧", "迪家"],
-    "Off-White": ["OFFWHITE"],
+    "Off-White": ["OF家", "OFFWHITE"],
     "Moncler": ["MONCLER", "MONCL", "蒙口", "盟可睐"],
-    "Burberry": ["BURBERRY", "BURBERR", "BURBER", "巴宝莉", "巴寶莉", "巴宝家"],
+    "Burberry": ["巴家", "BURBERRY", "BURBERR", "BURBER", "巴宝莉", "巴寶莉", "巴宝家"],
     "Casablanca": ["CASABLANCA", "CASABIANOA", "卡萨布兰卡"],
-    "Hermès": ["HERMES", "爱马仕", "愛馬仕"],
+    "Hermès": ["爱家", "HERMES", "爱马仕", "愛馬仕"],
     "Hellstar": ["HELLSTAR"],
     "Fendi": ["FENDI", "FEND", "芬迪", "芬家"],
     "Prada": ["PRADA", "PRAD", "普拉达", "普拉達", "普拉家"],
-    "Balenciaga": ["BALENCIAGA", "BALENCIAG", "BALEN", "巴黎世家", "巴黎世"],
+    "Balenciaga": ["巴黎家", "BALENCIAGA", "BALENCIAG", "BALEN", "巴黎世家", "巴黎世"],
     "Amiri": ["AMIRI", "AMIR", "AM家"],
-    "Dolce & Gabbana": ["DOLCEGABBANA", "DOLCE", "GABBANA", "杜嘉班纳", "杜嘉班"],
+    "Dolce & Gabbana": ["D家", "DG家", "DOLCEGABBANA", "DOLCE", "GABBANA", "杜嘉班纳", "杜嘉班"],
     "Stone Island": ["STONEISLAND", "石头岛"],
-    "Versace": ["VERSACE", "范思哲"],
+    "Versace": ["范家", "VERSACE", "范思哲"],
     "Hugo Boss": ["HUGOBOSS", "BOSS"],
     "Lacoste": ["LACOSTE", "鳄鱼"],
-    "Alexander McQueen": ["MCQUEEN", "MCQUEE", "麦昆", "麥昆"],
-    "Loewe": ["LOEWE", "罗意威", "羅意威"],
+    "Alexander McQueen": ["麦家", "MCQUEEN", "MCQUEE", "麦昆", "麥昆"],
+    "Loewe": ["罗意家", "LOEWE", "罗意威", "羅意威"],
     "Ksubi": ["KSUBI"],
-    "Loro Piana": ["LOROPIANA"],
-    "Balmain": ["BALMAIN"],
-    "Givenchy": ["GIVENCHY", "GIVENC", "纪梵希", "紀梵希"],
+    "Loro Piana": ["LP家", "LOROPIANA"],
+    "Balmain": ["巴尔家", "BALMAIN"],
+    "Givenchy": ["纪梵家", "GIVENCHY", "GIVENC", "纪梵希", "紀梵希"],
     "Coach": ["COACH", "蔻驰"],
     "Bally": ["BALLY"],
     "Supreme": ["SUPREME"],
-    "Saint Laurent": ["SAINTLAURENT", "YSL", "圣罗兰", "聖羅蘭"],
-    "Celine": ["CELINE", "赛琳", "賽琳"],
+    "Saint Laurent": ["圣罗家", "SAINTLAURENT", "YSL", "圣罗兰", "聖羅蘭"],
+    "Celine": ["赛家", "CELINE", "赛琳", "賽琳"],
     "Valentino": ["VALENTINO", "华伦天奴", "華倫天奴", "华伦家"],
     "Miu Miu": ["MIUMIU", "缪缪", "谬家", "缪家"],
-    "Jimmy Choo": ["JIMMYCHOO", "吉米周"],
+    "Jimmy Choo": ["吉米家", "JIMMYCHOO", "吉米周"],
     "Bottega Veneta": ["BOTTEGA", "葆蝶家"],
     "Chanel": ["CHANEL", "香奈儿", "香奈兒"],
     "Ralph Lauren": ["RALPHLAUREN", "拉夫劳伦"],
@@ -134,6 +138,15 @@ MARCAS: dict[str, list[str]] = {
     "Tom Ford": ["TOMFORD"],
     "Rolex": ["ROLEX", "劳力士"],
     "Cartier": ["CARTIER", "卡地亚"],
+    "Roger Vivier": ["ROGERVIVIER", "R家", "罗杰维维亚"],
+    "Alaïa": ["AL家", "ALAIA"],
+    "Aquazzura": ["AQ家", "AQUAZZURA"],
+    "Gianvito Rossi": ["GR家", "罗西家", "GIANVITOROSSI"],
+    "Stuart Weitzman": ["SW家", "S家", "STUARTWEITZMAN"],
+    "Isabel Marant": ["伊莎家", "ISABELMARANT"],
+    "Tod's": ["托德家", "TODS"],
+    "Hogan": ["霍根家", "HOGAN"],
+    "Maison Margiela": ["MM家", "MAISONMARGIELA", "MARGIELA"],
 }
 # Marcas curtas que só valem como palavra solta no título original ("LV 3413"), nunca no meio de outra palavra.
 PALAVRA_SOLTA = {"LV", "YSL", "BOSS"}
@@ -185,8 +198,10 @@ def main() -> None:
     marcas: Counter[str] = Counter()
     exemplos_marca: dict[str, list[str]] = defaultdict(list)
 
+    por_foto = json.loads(MARCAS_POR_FOTO.read_text(encoding="utf-8")) if MARCAS_POR_FOTO.exists() else {}
+
     for produto in produtos:
-        marca = marca_sugerida(produto["name"])
+        marca = marca_sugerida(produto["name"]) or por_foto.get(produto["id"])
         if marca and not produto.get("brand"):
             produto["brand"] = marca
         if produto.get("brand"):
